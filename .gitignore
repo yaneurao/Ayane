@@ -1,0 +1,10 @@
+bin/
+obj/
+exe/
+build/
+.vs/
+.vscode/
+openblas/
+.pyc
+.json
+__pycache__/
