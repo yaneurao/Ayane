@@ -10,32 +10,43 @@ class UsiEngineState(Enum):
     WaitConnecting  = 1     # 起動待ち
     Connected       = 2     # 起動完了
     WaitReadyOk     = 3     # "readyok"待ち
+    WaitCommand     = 4     # "position"コマンド等を送信できる状態になった
+    WaitBestmove    = 5     # "go"コマンドを送ったので"bestmove"が返ってくるのを待っている状態
     Disconnected    = 999   # 終了した
 
 # USIプロトコルを用いて思考エンジンとやりとりするためのwrapperクラス
 class UsiEngine():
 
+    # 通信内容をprintで表示する(デバッグ用)
+    debug_print = True
+
+    # エンジン側から"Error"が含まれている文字列が返ってきたら、それをprintで表示する。
+    # これはTrueにしておくのがお勧め。
+    error_print = True
+
+    # --- readonly members ---
+
     # エンジンの格納フォルダ
     # Connect()を呼び出したときに代入される。(readonly)
     engine_path = None
-    engine_full_path = None
+    engine_fullpath = None
 
     # エンジンとのやりとりの状態を表現する。(readonly)
-    engine_status = None
+    # UsiEngineState型
+    engine_state = None
     
     # connect()のあと、エンジンが終了したときの状態
     # エラーがあったとき、ここにエラーメッセージ文字列が入る
     # エラーがなく終了したのであれば0が入る。(readonly)
-    exit_status = None
-
-    # 通信内容をprintで表示する(デバッグ用)
-    debug_print = True
+    exit_state = None
 
     # engineに渡すOptionを設定する。
     # 基本的にエンジンは"engine_options.txt"で設定するが、Threads、Hashなどあとから指定したいものもあるので
     # それらについては、connectの前にこのメソッドを呼び出して設定しておく。
     # 例) usi.set_option({"Hash":"128","Threads":"8"})
     def set_options(self,options):
+        if type(options) is not dict:
+            raise TypeError("options must be dict.")
         self.__options = options
 
     # エンジンに接続する
@@ -44,10 +55,13 @@ class UsiEngine():
         self.disconnect()
 
         self.engine_path = engine_path
-        self.exit_status = None
+        self.exit_state = None
 
         # write workerに対するコマンドqueue
         self.__send_queue = Queue()
+
+        # 最後にエンジン側から受信した行
+        self.last_received_line = None
 
         # 実行ファイルの存在するフォルダ
         self.engine_fullpath = os.path.join(os.getcwd() , self.engine_path)
@@ -60,7 +74,7 @@ class UsiEngine():
         if self.__proc.poll() is not None:
             self.__proc = None
             self.engine_state = UsiEngineState.Disconnected
-            self.exit_status = "Connection Error"
+            self.exit_state = "Connection Error"
             return
 
         # self.send_command("usi")     # "usi"コマンドを先行して送っておく。
@@ -95,13 +109,55 @@ class UsiEngine():
             self.__write_thread.join()
             self.__write_thread = None
 
+        # GCが呼び出されたときに回収されるはずだが、UnitTestでresource leakの警告が出るのが許せないので
+        # この時点でclose()を呼び出しておく。
+        if self.__proc is not None:
+            self.__proc.stdin.close()
+            self.__proc.stdout.close()
+            self.__proc.stderr.close()
+            self.__proc.terminate()
+
         self.__proc = None
         self.engine_state = UsiEngineState.Disconnected
 
+    # 指定したUsiEngineStateになるのを待つ
+    # disconnectedになってしまったら例外をraise
+    def wait_for_state(self,state):
+        if type(state) is not UsiEngineState:
+            raise TypeError("state must be UsiEngineState.")
+        while True:
+            if  self.engine_state == state:
+                return
+            if self.engine_state == UsiEngineState.Disconnected:
+                raise ValueError("engine_state == UsiEngineState.Disconnected.")
+            time.sleep(0.001)
+
+
     # 局面をエンジンに送信する。sfen形式。
     # 例 : "startpos moves ..."とか"sfen ... moves ..."みたいな形式 
+    # 「USIプロトコル」でググれ。
     def position_command(self,sfen):
+        self.wait_for_state(UsiEngineState.WaitCommand)
         self.send_command("position " + sfen)
+
+
+    # position_command()で設定した局面に対する合法手の指し手の集合を得る。
+    # USIプロトコルでの表記文字列で返ってくる。
+    # すぐに返ってくるはずなのでブロッキングメソッド
+    # "moves"は、やねうら王でしか使えないUSI拡張コマンド
+    def get_moves(self):
+        self.wait_for_state(UsiEngineState.WaitCommand)
+        self.__last_received_line = None
+        self.send_command("moves")
+
+        # エンジン側から一行受信するまでblockingして待機
+        while True:
+            if self.__last_received_line is not None:
+                return self.__last_received_line
+            time.sleep(0.001)
+
+        # コマンドをエンジンに1行送って1行受け取るだけなのでself.engine_stateは変更しない。
+
 
     # position_command()のあと、エンジンに思考させる。
     # options :
@@ -111,24 +167,22 @@ class UsiEngine():
     def go_command(self,options):
         self.send_command("go " + options)
 
+
     # エンジンとのやりとりを行うスレッド(read方向)
     def __read_worker(self):
-        try:
-            while (True):
-                line = self.__proc.stdout.readline()
-                # プロセスが終了した場合、line = Noneのままreadline()を抜ける。
-                if line :
-                    self.__dispatch_message(line.strip())
+        while (True):
+            line = self.__proc.stdout.readline()
+            # プロセスが終了した場合、line = Noneのままreadline()を抜ける。
+            if line :
+                self.__dispatch_message(line.strip())
 
-                # プロセスが生きているかのチェック
-                retcode = self.__proc.poll()
-                if not line and retcode is not None:
-                    self.exitStatus = 0
-                    # エラー以外の何らかの理由による終了
-                    break
-        except:
-            # エンジン、見つからなかったのでは…。
-            self.exit_status = "Engine error read_worker failed , EngineFullPath = " + self.engineFullPath
+            # プロセスが生きているかのチェック
+            retcode = self.__proc.poll()
+            if not line and retcode is not None:
+                self.exit_state = 0
+                # エラー以外の何らかの理由による終了
+                break
+
 
     # エンジンとやりとりを行うスレッド(write方向)
     def __write_worker(self):
@@ -159,17 +213,35 @@ class UsiEngine():
                 
         except:
             # print("write worker exception")
-            self.exit_status = "Engine error write_worker failed , EngineFullPath = " + self.engine_fullpath
+            self.exit_state = "Engine error write_worker failed , EngineFullPath = " + self.engine_fullpath
+
 
     # エンジン側から送られてきたメッセージを解釈する。
     def __dispatch_message(self,message):
-        if self.debug_print:
+        # デバッグ用に受け取ったメッセージを出力するのか？
+        if self.debug_print or (self.error_print and message.find("Error") > -1):
             print("[>] " + message)
+
+        # 最後に受信した文字列はここに積む約束になっている。
+        self.__last_received_line = message
+
+        # 先頭の文字列で判別する。
+        commands = message.split()
+        if len(commands) :
+            command = commands[0]
+        else:
+            command = ""
+
+        if command == "readyok":
+            self.engine_state = UsiEngineState.WaitCommand
+
         # TODO : あとで実装する。
+
 
     # デストラクタで通信の切断を行う。
     def __del__(self):
         self.disconnect()
+
 
     # === private members ===
 
@@ -184,6 +256,9 @@ class UsiEngine():
     # 例 : {"Hash":"128","Threads":"8"}
     __options = None
 
+    # 最後にエンジン側から受信した1行
+    __last_received_line = None
+
 
 if __name__ == "__main__":
     # テスト用のコード
@@ -195,4 +270,4 @@ if __name__ == "__main__":
     usi.disconnect()
     time.sleep(1)
 
-    print(usi.exit_status)
+    print(usi.exit_state)
