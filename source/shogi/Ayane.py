@@ -4,9 +4,12 @@ import time
 import os
 from queue import Queue
 from enum import Enum
+from enum import IntEnum
 
-# これらのクラスを用いるには、USIプロトコルについてある程度理解している必要があります。
-# 「USIプロトコル」でググってください。
+# unit_test.pyのほうのコードを見ると最低限の使い方は理解できるはずです。(それがサンプルを兼ねているので)
+
+# しかし、それ以上に利用しようとする場合、多少はUSIプロトコルについて理解している必要があります。
+# cf.「USIプロトコルとは」: http://shogidokoro.starfree.jp/usi.html
 
 
 # UsiEngineクラスのなかで用いるエンジンの状態を表現するenum
@@ -19,12 +22,21 @@ class UsiEngineState(Enum):
     Disconnected    = 999   # 終了した
 
 
-# 評価値(Eval)を表現するenum
-class UsiEvalValue(Enum):
+# 特殊な評価値(Eval)を表現するenum
+class UsiEvalSpecialValue(IntEnum):
 
 	# 0手詰めのスコア(rootで詰んでいるときのscore)
 	# 例えば、3手詰めならこの値より3少ない。
     ValueMate = 100000
+
+    # MaxPly(256)手で詰むときのスコア
+    ValueMateInMaxPly = ValueMate - 256
+
+    # 詰まされるスコア
+    ValueMated = -int(ValueMate)
+
+    # MaxPly(256)手で詰まされるときのスコア
+    ValueMatedInMaxPly = -int(ValueMateInMaxPly)
 
 	# Valueの取りうる最大値(最小値はこの符号を反転させた値)
     ValueInfinite = 100001
@@ -32,26 +44,59 @@ class UsiEvalValue(Enum):
 	# 無効な値
     ValueNone = 100002
 
+
+# 評価値(Eval)を表現する型
+class UsiEvalValue(int):
+
+    # 詰みのスコアであるか
+    def is_mate_score(self):
+        return UsiEvalSpecialValue.ValueMateInMaxPly <= self and self <= UsiEvalSpecialValue.ValueMate
+        
+    # 詰まされるスコアであるか
+    def is_mated_score(self):
+        return self <= UsiEvalSpecialValue.ValueMated <= self and self <= UsiEvalSpecialValue.ValueMatedInMaxPly
+
+    # 評価値を文字列化する。
+    def to_string(self):
+        if self.is_mate_score():
+            return "mate " + UsiEvalSpecialValue.ValueMate - self
+        elif self.is_mated_score():
+            return "mated " + self - UsiEvalSpecialValue.ValueMated
+        return "cp " + str(self)
+        
     # ply手詰みのスコアを数値化する    
     # ply : integer
     @staticmethod
     def mate_in_ply(ply : int):
-        return int(UsiEvalValue.ValueMate) - ply
+        return int(UsiEvalSpecialValue.ValueMate) - ply
 
     # ply手で詰まされるスコアを数値化する
     # ply : integer
     @staticmethod
     def mated_in_ply(ply : int):
-        return -int(UsiEvalValue.ValueMate) + ply
+        return -int(UsiEvalSpecialValue.ValueMate) + ply
 
+
+# 読み筋として返ってきた評価値がfail low/highしたときのスコアであるか
+class UsiBound(Enum):
+    BoundNone = 0
+    BoundUpper = 1
+    BoundLower = 2
+    BoundExact = 3
+
+    # USIプロトコルで使う文字列化して返す。
+    def to_string(self) -> str:
+        if self == self.BoundUpper :
+            return "upperbound"
+        elif self == self.BoundLower:
+            return "lowerbound"
+        return ""
 
 
 # 思考エンジンから送られてきた読み筋を表現するクラス。
 # "info pv ..."を解釈したもの。
+# 送られてこなかった値に関してはNoneになっている。
 class UsiThinkPV():
-
-    # 評価値(整数値) : UsiEvalValue型
-    eval = None
 
     # PV文字列。最善応手列。sfen表記文字列にて。
     # 例 : "7g7f 8c8d"みたいなの。あとは、split()して使ってもらえればと。
@@ -63,7 +108,56 @@ class UsiThinkPV():
     #  "rep_lose" : 王手を含む千日手(反則負け) // これ実際には出力されないはずだが…。
     #  読み筋が宣言勝ちのときは読み筋の末尾に "win"
     #  投了の局面で呼び出されたとき "resign"
-    pv = None
+    pv = None # str
+
+    # 評価値(整数値)
+    eval = None # UsiEvalValue
+
+    # 読みの深さ
+    depth = None # int
+
+    # 読みの選択深さ
+    seldepth = None # int
+
+    # 読みのノード数
+    nodes = None # int
+
+    # "go"を送信してからの経過時刻。[ms]
+    time = None # int
+
+    # hash使用率 1000分率
+    hashfull = None # int
+
+    # nps
+    nps = None # int
+
+    # bound
+    bound = None # UsiBound
+
+    # 表示できる文字列化して返す。(主にデバッグ用)
+    def to_string(self) -> str:
+        s = []
+        self.__append(s,"depth" , self.depth)
+        self.__append(s,"seldepth",self.seldepth)
+        if self.eval is not None:
+            s.append(self.eval.to_string())
+        if self.bound is not None:
+            s.append("bound")
+            s.append(self.bound.to_string())
+        self.__append(s,"nodes",self.nodes)
+        self.__append(s,"time",self.time)
+        self.__append(s,"hashfull",self.hashfull)
+        self.__append(s,"nps" , self.nps)
+        self.__append(s,"pv",self.pv)
+        
+        return ' '.join(s)
+
+    # to_string()の下請け。str2がNoneではないとき、s[]に、str1とstr2をappendする。
+    @staticmethod
+    def __append(s:[],str1:str,str2:str):
+        if str2 is not None:
+            s.append(str1)
+            s.append(str2)
 
 
 # 思考エンジンに対して送った"go"コマンドに対して思考エンジンから返ってきた情報を保持する構造体
@@ -79,20 +173,92 @@ class UsiThinkResult():
 
     # 最善応手列
     # UsiThinkPVの配列。
-    # MultiPVのとき、その数だけ返ってくる。
+    # MultiPVのとき、その数だけ要素を持つ配列になる。
     # 最後に送られてきた読み筋がここに格納される。
-    pvs = [] # List[UsiThinkPv]
+    pvs = [] # List[UsiThinkPV]
+
+    # このインスタンスの内容を文字列化する。(主にデバッグ用)
+    def to_string(self)->str:
+        s = ""
+        # pvを形にして出力する
+        if len(self.pvs) == 1:
+            s += self.pvs[0].to_string()
+        elif len(self.pvs) >= 2:
+            i = 1
+            for p in self.pvs:
+                s += "multipv {0} {1}\n".format(i, p.to_string())
+                i += 1
+
+        # bestmoveとponderを連結する。
+        if self.bestmove is not None:
+            s += "bestmove " + self.bestmove
+        if self.ponder is not None:
+            s += " ponder" + self.ponder
+        return s
+
+
+# 文字列のparseを行うもの。
+class Scanner:
+
+    # argsとしてstr[]を渡しておく。
+    # args[index]のところからスキャンしていく。
+    def __init__(self , args : [] , index : int):
+        self.__args = args
+        self.__index = index
+
+    # 次のtokenを覗き見する。tokenがなければNoneが返る。
+    # indexは進めない
+    def peek_token(self) -> str:
+        if self.is_eof():
+            return None
+        return self.__args[self.__index]
+
+    # 次のtokenを取得して文字列として返す。indexを1進める。
+    def get_token(self) -> str:
+        if self.is_eof():
+            return None
+        token = self.__args[self.__index]
+        self.__index += 1
+        return token
+
+    # 次のtokenを取得して数値化して返す。indexを1進める。
+    def get_integer(self) -> int:
+        if self.is_eof():
+            return None
+        token = self.__args[self.__index]
+        self.__index += 1
+        try:
+            return int(token)
+        except:
+            return None
+        
+    # indexが配列の末尾まで行ってればtrueが返る。
+    def is_eof(self) -> bool:
+        return len(self.__args) <= self.__index
+
+    # index以降の文字列を連結して返す。
+    # indexは配列末尾を指すようになる。(is_eof()==Trueを返すようになる)
+    def rest_string(self) -> str:
+        rest = ' '.join(self.__args[self.__index:])
+        self.__index = len(self.__args)
+        return rest
+
+    # 元の配列をスペースで連結したものを返す。
+    def get_original_text(self) -> str:
+        return ' '.join(self.__args)
 
 
 # USIプロトコルを用いて思考エンジンとやりとりするためのwrapperクラス
 class UsiEngine():
 
     # 通信内容をprintで表示する(デバッグ用)
-    debug_print = True
+    debug_print = False
 
     # エンジン側から"Error"が含まれている文字列が返ってきたら、それをprintで表示する。
     # これはTrueにしておくのがお勧め。
     error_print = True
+
+    think_result = None # UsiThinkResult
 
     # --- readonly members ---
 
@@ -115,20 +281,21 @@ class UsiEngine():
     # 基本的にエンジンは"engine_options.txt"で設定するが、Threads、Hashなどあとから指定したいものもあるので
     # それらについては、connectの前にこのメソッドを呼び出して設定しておく。
     # 例) usi.set_option({"Hash":"128","Threads":"8"})
-    def set_options(self,options):
-        if type(options) is not dict:
-            raise TypeError("options must be dict.")
+    def set_options(self,options : dict):
         self.__options = options
 
 
     # エンジンに接続する
     # enginePath : エンジンPathを指定する。
     # エンジンが存在しないときは例外がでる。
-    def connect(self, engine_path):
+    def connect(self, engine_path : str):
         self.disconnect()
 
-        self.engine_path = engine_path
+        # engine_stateは、disconnect()でUsiEngineState.DisconnectedになってしまうのでいったんNoneに設定してリセット。
+        # 以降は、この変数は、__change_state()を呼び出して変更すること。
+        self.engine_state = None
         self.exit_state = None
+        self.engine_path = engine_path
 
         # write workerに対するコマンドqueue
         self.__send_queue = Queue()
@@ -138,24 +305,24 @@ class UsiEngine():
 
         # 実行ファイルの存在するフォルダ
         self.engine_fullpath = os.path.join(os.getcwd() , self.engine_path)
-        self.engine_state = UsiEngineState.WaitConnecting
+        self.__change_state(UsiEngineState.WaitConnecting)
 
         # subprocess.Popen()では接続失敗を確認する手段がないくさいので、
         # 事前に実行ファイルが存在するかを調べる。
         if not os.path.exists(self.engine_fullpath):
-            self.engine_state = UsiEngineState.Disconnected
+            self.__change_state(UsiEngineState.Disconnected)
             self.exit_state = "Connection Error"
             raise FileNotFoundError(self.engine_fullpath + " not found.")
 
-        self.__proc = subprocess.Popen(self.engine_fullpath , shell=True, \
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE , stdin = subprocess.PIPE , \
+        self.__proc = subprocess.Popen(self.engine_fullpath , shell=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE , stdin = subprocess.PIPE ,
             encoding = 'utf-8' , cwd=os.path.dirname(self.engine_fullpath))
 
         # self.send_command("usi")     # "usi"コマンドを先行して送っておく。
         # →　オプション項目が知りたいわけでなければエンジンに対して"usi"、送る必要なかったりする。
         # また、オプション自体は、"engine_options.txt"で設定されるものとする。
 
-        self.engine_state = UsiEngineState.Connected
+        self.__change_state(UsiEngineState.Connected)
 
         # 読み書きスレッド
         self.__read_thread = threading.Thread(target=self.__read_worker)
@@ -165,7 +332,7 @@ class UsiEngine():
 
 
     # エンジン用のプロセスにコマンドを送信する(プロセスの標準入力にメッセージを送る)
-    def send_command(self, message):
+    def send_command(self, message : str):
         self.__send_queue.put(message)
 
 
@@ -194,26 +361,29 @@ class UsiEngine():
             self.__proc.terminate()
 
         self.__proc = None
-        self.engine_state = UsiEngineState.Disconnected
+        self.__change_state(UsiEngineState.Disconnected)
 
 
     # 指定したUsiEngineStateになるのを待つ
     # disconnectedになってしまったら例外をraise
-    def wait_for_state(self,state):
-        if type(state) is not UsiEngineState:
-            raise TypeError("state must be UsiEngineState.")
+    def wait_for_state(self,state : UsiEngineState):
         while True:
             if  self.engine_state == state:
                 return
             if self.engine_state == UsiEngineState.Disconnected:
                 raise ValueError("engine_state == UsiEngineState.Disconnected.")
-            time.sleep(0.001)
+            
+            # Eventが変化するのを待機する。
+            self.__state_changed.wait()
+
+            # 滅多に起きてこないのでここはsleep不要
+            #time.sleep(0)
 
 
     # 局面をエンジンに送信する。sfen形式。
     # 例 : "startpos moves ..."とか"sfen ... moves ..."みたいな形式 
     # 「USIプロトコル」でググれ。
-    def send_position(self,sfen):
+    def send_position(self,sfen : str):
         self.wait_for_state(UsiEngineState.WaitCommand)
         self.send_command("position " + sfen)
 
@@ -222,7 +392,7 @@ class UsiEngine():
     # USIプロトコルでの表記文字列で返ってくる。
     # すぐに返ってくるはずなのでブロッキングメソッド
     # "moves"は、やねうら王でしか使えないUSI拡張コマンド
-    def get_moves(self):
+    def get_moves(self) -> str:
         self.wait_for_state(UsiEngineState.WaitCommand)
         self.__last_received_line = None
         self.send_command("moves")
@@ -236,13 +406,45 @@ class UsiEngine():
         # コマンドをエンジンに1行送って1行受け取るだけなのでself.engine_stateは変更しない。
 
 
+    # --- エンジンに対して送信するコマンド ---
+
+    # [ASYNC]
     # position_command()のあと、エンジンに思考させる。
     # options :
     #  "infinite" : stopを送信するまで無限に考える。
     #  "btime 10000 wtime 10000 byoyomi 3000" : 先手、後手の持ち時間 + 秒読みの持ち時間を指定して思考させる。単位は[ms]
     #  "depth 10" : 深さ10固定で思考させる
-    def go_command(self,options):
+    # self.think_result.bestmove != Noneになったらそれがエンジン側から返ってきた最善手なので、それを以て、go_commandが完了したとみなせる。
+    def usi_go(self,options:str):
+        self.think_result = UsiThinkResult()
         self.send_command("go " + options)
+
+
+    # [SYNC]
+    # go_command()を呼び出して、そのあとbestmoveが返ってくるまで待つ。
+    # 思考結果はself.think_resultから取り出せる。
+    def usi_go_and_wait_bestmove(self,options:str):
+        self.usi_go(options)
+        self.wait_bestmove()
+
+
+    # [ASYNC]
+    # エンジンに対してstopを送信する。
+    # "go infinite"で思考させたときに停止させるのに用いる。
+    # self.think_result.bestmove != Noneになったらそれがエンジン側から返ってきた最善手なので、それを以て、go_commandが完了したとみなせる。
+    def usi_stop(self):
+        self.send_command("stop")
+
+
+    # [SYNC]
+    # bestmoveが返ってくるのを待つ
+    # self.think_result.bestmoveからbestmoveを取り出すことができる。
+    def wait_bestmove(self):
+        while self.think_result.bestmove is None:
+            time.sleep(0.001)
+
+
+    # --- エンジンに対するコマンド、ここまで ---
 
 
     # エンジンとのやりとりを行うスレッド(read方向)
@@ -269,19 +471,35 @@ class UsiEngine():
                 self.send_command("setoption name {0} value {1}".format(k,v))
 
         self.send_command("isready") # 先行して"isready"を送信
-        self.engine_state = UsiEngineState.WaitReadyOk
+        self.__change_state(UsiEngineState.WaitReadyOk)
 
         try:
             while(True):
                 message = self.__send_queue.get()
+
+                # 先頭の文字列で判別する。
+                messages = message.split()
+                if len(messages) :
+                    token = messages[0]
+                else:
+                    token = ""
+
+                # stopコマンドではあるが、goコマンドを送信していないなら送信しない。
+                if token == "stop":
+                    if self.engine_state != UsiEngineState.WaitBestmove:
+                        continue
+                # 終了コマンドを送信したなら自発的にこのスレッドを終了させる。
+                elif token == "go":
+                    self.wait_for_state(UsiEngineState.WaitCommand)
+                    self.__change_state(UsiEngineState.WaitBestmove)
+
                 self.__proc.stdin.write(message + '\n')
                 self.__proc.stdin.flush()
                 if self.debug_print:
-                    print("[<] " + message)
+                    self.__print("[<] " + message)
 
-                # 終了コマンドを送信したなら自発的にこのスレッドを終了させる。
-                if message == "quit":
-                    self.engine_state = UsiEngineState.Disconnected
+                if token == "quit":
+                    self.__change_state(UsiEngineState.Disconnected)
                     break
 
                 retcode = self.__proc.poll()
@@ -292,28 +510,133 @@ class UsiEngine():
             # print("write worker exception")
             self.exit_state = "Engine error write_worker failed , EngineFullPath = " + self.engine_fullpath
 
+    # 排他制御をするprint(このクラスからの出力に関してのみ)
+    def __print(self,mes : str):
+        self.__lock_object.acquire()
+        print(mes)
+        self.__lock_object.release()
+
+    # self.engine_stateを変更する。
+    def __change_state(self,state : UsiEngineState):
+        # 切断されたあとでは変更できない
+        if self.engine_state == UsiEngineState.Disconnected :
+            return 
+        # goコマンドを送ってWaitBestmoveに変更する場合、現在の状態がWaitCommandでなければならない。
+        if state == UsiEngineState.WaitBestmove:
+            if self.engine_state != UsiEngineState.WaitCommand:
+                raise ValueError("can't send go command when self.engine_state != UsiEngineState.WaitCommand")
+
+        self.engine_state = state
+        self.__state_changed.set()
 
     # エンジン側から送られてきたメッセージを解釈する。
-    def __dispatch_message(self,message):
+    def __dispatch_message(self,message:str):
         # デバッグ用に受け取ったメッセージを出力するのか？
         if self.debug_print or (self.error_print and message.find("Error") > -1):
-            print("[>] " + message)
+            self.__print("[>] " + message)
 
         # 最後に受信した文字列はここに積む約束になっている。
         self.__last_received_line = message
 
         # 先頭の文字列で判別する。
-        commands = message.split()
-        if len(commands) :
-            command = commands[0]
+        messages = message.split()
+        if len(messages) :
+            token = messages[0]
         else:
-            command = ""
+            token = ""
 
-        if command == "readyok":
-            self.engine_state = UsiEngineState.WaitCommand
+        # --- handleするメッセージ
 
-        # TODO : あとで実装する。
+        # "isready"に対する応答
+        if token == "readyok":
+            self.__change_state(UsiEngineState.WaitCommand)
+        # "go"に対する応答
+        elif token == "bestmove":
+            self.__handle_bestmove(messages)
+            self.__change_state(UsiEngineState.WaitCommand)
+        # エンジンの読み筋に対する応答
+        elif token == "info":
+            self.__handle_info(messages)
 
+
+    # エンジンから送られてきた"bestmove"を処理する。
+    def __handle_bestmove(self,messages:[]):
+        if len(messages) >= 4 and messages[2] == "ponder":
+            self.think_result.ponder = messages[3]
+        
+        if len(messages) >= 2 :
+            self.think_result.bestmove = messages[1]
+        else:
+            # 思考内容返ってきてない。どうなってんの…。
+            self.think_result.bestmove = "none"
+
+
+    # エンジンから送られてきた"info ..."を処理する。
+    def __handle_info(self,messages:str):
+
+        # まだ"go"を発行していないのか？
+        if self.think_result is None:
+            return 
+
+        # 解析していく
+        scanner = Scanner(messages,1)
+        pv = UsiThinkPV()
+
+        # multipvの何番目の読み筋であるか
+        multipv = 1
+        while not scanner.is_eof():
+            try:
+                token = scanner.get_token()
+                if token == "string":
+                    return 
+                elif token == "depth":
+                    pv.depth = scanner.get_token()
+                elif token == "seldepth":
+                    pv.seldepth = scanner.get_token()
+                elif token == "nodes":
+                    pv.nodes = scanner.get_token()
+                elif token == "nps":
+                    pv.nps = scanner.get_token()
+                elif token == "hashfull":
+                    pv.hashfull = scanner.get_token()
+                elif token == "time":
+                    pv.time = scanner.get_token()
+                elif token == "pv":
+                    pv.pv = scanner.rest_string()
+                elif token == "multipv":
+                    multipv = scanner.get_integer()
+                # 評価値絡み
+                elif token == "score":
+                    token = scanner.get_token()
+                    if token == "mate":
+                        pv.eval = UsiEvalValue.mate_in_ply(scanner.get_integer())
+                    elif token == "mated":
+                        pv.eval = UsiEvalValue.mated_in_ply(scanner.get_integer())
+                    elif token == "cp":
+                        pv.eval = UsiEvalValue(scanner.get_integer())
+
+                    # この直後に"upperbound"/"lowerbound"が付与されている可能性がある。
+                    token = scanner.peek_token()
+                    if token == "upperbound":
+                        pv.bound = UsiBound.BoundUpper
+                        scanner.get_token()
+                    elif token == "lowerbound":
+                        pv.bound = UsiBound.BoundLower
+                        scanner.get_token()
+                    else:
+                        pv.bound = UsiBound.BoundExact
+
+                # "info string.."はコメントなのでこの行は丸ごと無視する。
+                else:
+                    raise ValueError("ParseError")
+            except:
+                print("ParseError : token = " + token + " , line = " + scanner.get_original_text())
+
+        if multipv >= 1:
+            # 配列の要素数が足りないなら、追加しておく。
+            while len(self.think_result.pvs) < multipv:
+                self.think_result.pvs.append(None)
+            self.think_result.pvs[multipv - 1] = pv
 
     # デストラクタで通信の切断を行う。
     def __del__(self):
@@ -336,10 +659,17 @@ class UsiEngine():
     # 最後にエンジン側から受信した1行
     __last_received_line = None
 
+    # print()を呼び出すときのlock object
+    __lock_object = threading.Lock()
+
+    # engine_stateが変化したときに起きるevent
+    __state_changed = threading.Event()
+
 
 if __name__ == "__main__":
     # テスト用のコード
     usi = UsiEngine()
+    usi.debug_print = True
     usi.connect("exe/YaneuraOu.exe")
     print(usi.engine_path)
     usi.send_position("startpos moves 7g7f")
