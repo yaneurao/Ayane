@@ -5,6 +5,10 @@ import os
 from queue import Queue
 from enum import Enum
 
+# これらのクラスを用いるには、USIプロトコルについてある程度理解している必要があります。
+# 「USIプロトコル」でググってください。
+
+
 # UsiEngineクラスのなかで用いるエンジンの状態を表現するenum
 class UsiEngineState(Enum):
     WaitConnecting  = 1     # 起動待ち
@@ -13,6 +17,72 @@ class UsiEngineState(Enum):
     WaitCommand     = 4     # "position"コマンド等を送信できる状態になった
     WaitBestmove    = 5     # "go"コマンドを送ったので"bestmove"が返ってくるのを待っている状態
     Disconnected    = 999   # 終了した
+
+
+# 評価値(Eval)を表現するenum
+class UsiEvalValue(Enum):
+
+	# 0手詰めのスコア(rootで詰んでいるときのscore)
+	# 例えば、3手詰めならこの値より3少ない。
+    ValueMate = 100000
+
+	# Valueの取りうる最大値(最小値はこの符号を反転させた値)
+    ValueInfinite = 100001
+
+	# 無効な値
+    ValueNone = 100002
+
+    # ply手詰みのスコアを数値化する    
+    # ply : integer
+    @staticmethod
+    def mate_in_ply(ply : int):
+        return int(UsiEvalValue.ValueMate) - ply
+
+    # ply手で詰まされるスコアを数値化する
+    # ply : integer
+    @staticmethod
+    def mated_in_ply(ply : int):
+        return -int(UsiEvalValue.ValueMate) + ply
+
+
+
+# 思考エンジンから送られてきた読み筋を表現するクラス。
+# "info pv ..."を解釈したもの。
+class UsiThinkPV():
+
+    # 評価値(整数値) : UsiEvalValue型
+    eval = None
+
+    # PV文字列。最善応手列。sfen表記文字列にて。
+    # 例 : "7g7f 8c8d"みたいなの。あとは、split()して使ってもらえればと。
+    # sfen以外の特殊表記として以下の文字列が混じっていることがあります。(やねうら王のdocs/解説.txtを参考にすること。)
+    #  "rep_draw" : 普通の千日手
+    #  "rep_sup"  : 優等局面(盤上の駒配置が同一で手駒が一方的に増えている局面への突入。相手からの歩の成り捨て～同金～歩打ち～金引きみたいな循環)
+    #  "rep_inf"  : 劣等局面(盤上の駒配置が同一で手駒が一方的に減っている局面への突入)
+    #  "rep_win"  : 王手を含む千日手(反則勝ち) // これ実際には出力されないはずだが…。
+    #  "rep_lose" : 王手を含む千日手(反則負け) // これ実際には出力されないはずだが…。
+    #  読み筋が宣言勝ちのときは読み筋の末尾に "win"
+    #  投了の局面で呼び出されたとき "resign"
+    pv = None
+
+
+# 思考エンジンに対して送った"go"コマンドに対して思考エンジンから返ってきた情報を保持する構造体
+class UsiThinkResult():
+    # 最善手(sfen表記文字列にて。例:"7g7f")
+    # "bestmove"を受信するまではNoneが代入されている。
+    # "resign"(投了) , "win"(宣言勝ち) のような文字列もありうる。
+    bestmove = None
+
+    # 最善手を指したあとの相手の指し手。(sfen表記文字列にて)
+    # ない場合は、文字列で"none"。
+    ponder = None
+
+    # 最善応手列
+    # UsiThinkPVの配列。
+    # MultiPVのとき、その数だけ返ってくる。
+    # 最後に送られてきた読み筋がここに格納される。
+    pvs = [] # List[UsiThinkPv]
+
 
 # USIプロトコルを用いて思考エンジンとやりとりするためのwrapperクラス
 class UsiEngine():
@@ -40,6 +110,7 @@ class UsiEngine():
     # エラーがなく終了したのであれば0が入る。(readonly)
     exit_state = None
 
+
     # engineに渡すOptionを設定する。
     # 基本的にエンジンは"engine_options.txt"で設定するが、Threads、Hashなどあとから指定したいものもあるので
     # それらについては、connectの前にこのメソッドを呼び出して設定しておく。
@@ -49,8 +120,10 @@ class UsiEngine():
             raise TypeError("options must be dict.")
         self.__options = options
 
+
     # エンジンに接続する
     # enginePath : エンジンPathを指定する。
+    # エンジンが存在しないときは例外がでる。
     def connect(self, engine_path):
         self.disconnect()
 
@@ -66,16 +139,17 @@ class UsiEngine():
         # 実行ファイルの存在するフォルダ
         self.engine_fullpath = os.path.join(os.getcwd() , self.engine_path)
         self.engine_state = UsiEngineState.WaitConnecting
+
+        # subprocess.Popen()では接続失敗を確認する手段がないくさいので、
+        # 事前に実行ファイルが存在するかを調べる。
+        if not os.path.exists(self.engine_fullpath):
+            self.engine_state = UsiEngineState.Disconnected
+            self.exit_state = "Connection Error"
+            raise FileNotFoundError(self.engine_fullpath + " not found.")
+
         self.__proc = subprocess.Popen(self.engine_fullpath , shell=True, \
             stdout=subprocess.PIPE, stderr=subprocess.PIPE , stdin = subprocess.PIPE , \
             encoding = 'utf-8' , cwd=os.path.dirname(self.engine_fullpath))
-
-        # 接続失敗したくさい
-        if self.__proc.poll() is not None:
-            self.__proc = None
-            self.engine_state = UsiEngineState.Disconnected
-            self.exit_state = "Connection Error"
-            return
 
         # self.send_command("usi")     # "usi"コマンドを先行して送っておく。
         # →　オプション項目が知りたいわけでなければエンジンに対して"usi"、送る必要なかったりする。
@@ -89,9 +163,11 @@ class UsiEngine():
         self.__write_thread = threading.Thread(target=self.__write_worker)
         self.__write_thread.start()
 
+
     # エンジン用のプロセスにコマンドを送信する(プロセスの標準入力にメッセージを送る)
     def send_command(self, message):
         self.__send_queue.put(message)
+
 
     # エンジン用のプロセスを終了する
     def disconnect(self):
@@ -120,6 +196,7 @@ class UsiEngine():
         self.__proc = None
         self.engine_state = UsiEngineState.Disconnected
 
+
     # 指定したUsiEngineStateになるのを待つ
     # disconnectedになってしまったら例外をraise
     def wait_for_state(self,state):
@@ -136,7 +213,7 @@ class UsiEngine():
     # 局面をエンジンに送信する。sfen形式。
     # 例 : "startpos moves ..."とか"sfen ... moves ..."みたいな形式 
     # 「USIプロトコル」でググれ。
-    def position_command(self,sfen):
+    def send_position(self,sfen):
         self.wait_for_state(UsiEngineState.WaitCommand)
         self.send_command("position " + sfen)
 
@@ -265,9 +342,8 @@ if __name__ == "__main__":
     usi = UsiEngine()
     usi.connect("exe/YaneuraOu.exe")
     print(usi.engine_path)
-
-    time.sleep(1)
+    usi.send_position("startpos moves 7g7f")
+    print("moves = " + usi.get_moves())
     usi.disconnect()
-    time.sleep(1)
-
+    print(usi.engine_state)
     print(usi.exit_state)
