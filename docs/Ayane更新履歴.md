@@ -2,6 +2,9 @@
 ■　2019/06/28
 
 
+- threading.Conditionを使って待機モデルを書き直した。
+
+
 - ある局面に対して、余詰め(bestmove以外のmateの指し手)があるかどうかを調べるテストをUnitTestに追加
 
 
