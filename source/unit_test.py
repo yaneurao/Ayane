@@ -70,8 +70,42 @@ class TestAyane(unittest.TestCase):
         self.assertEqual( usi.engine_state , ayane.UsiEngineState.Disconnected)
 
 
-    # エンジン二つ起動して、対局させるテスト
+    # ある局面に対して、余詰め(bestmove以外のmateの指し手)があるかどうかを調べるテスト
     def test_ayane3(self):
+        sfens = [
+            "sfen 5R3/8k/9/9/7+b1/9/PP1+p5/LS7/KN7 b GSNrb3g2s2n3l15p",
+            "sfen 5B1k1/9/9/5R3/9/9/1+P7/PP1+p5/K+P7 b Srb4g3s4n4l13p",
+            "sfen 8k/6+Pg1/4+Bs2N/9/7+b1/9/PP1+p5/LS7/KN7 b GN2r2g2sn3l14p",
+        ]
+
+        usi = ayane.UsiEngine()
+        # usi.debug_print = True
+        usi.set_options({"Hash":"128","Threads":"4","NetworkDelay":"0","NetworkDelay2":"0"})
+        usi.connect("exe/YaneuraOu.exe")
+
+        for sfen in sfens:
+            usi.usi_position(sfen)
+
+            # MultiPVで探索してMultiPVの2番目の指し手がMateスコアであるかで判定する。
+            usi.send_command("multipv 2")
+            # 5秒考えてみる
+            usi.usi_go_and_wait_bestmove("btime 0 wtime 0 byoyomi 5000")
+
+            if len(usi.think_result.pvs) < 2:
+                print("sfen = {0 } : only one move".format(sfen))
+            else:
+                print("sfen = {0} : 1つ目の指し手の評価値 {1} , 2つ目の指し手の評価値 {2} , 余詰めあり？ {3} ".format( \
+                    sfen,
+                    usi.think_result.pvs[0].eval.to_string(),
+                    usi.think_result.pvs[1].eval.to_string(),
+                    ayane.UsiEvalValue.is_mate_score(usi.think_result.pvs[1].eval) # mateスコアか？
+                    ))
+
+        usi.disconnect()
+
+
+    # エンジン二つ起動して、対局させるテスト
+    def test_ayane4(self):
 
         # エンジン二つ
         usis = []
