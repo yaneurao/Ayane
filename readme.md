@@ -1,7 +1,7 @@
 ﻿# Ayaneとは？
 
 Ayaneとは、python Adaptor to YaneuraOuの略で、やねうら王をpythonから呼び出して便利に使えてしまうアダプターです。
-※　AdaptorのAと、YaneuraOuのYaneの部分でAyaneです。また、YaneuraOuのYane-r--uの部分を取って、Ayaneru(あやねる)の愛称で呼ぶことがあります。
+- ※　AdaptorのAと、YaneuraOuのYaneの部分でAyaneです。また、YaneuraOuのYane-r--uの部分を取って、Ayaneru(あやねる)の愛称で呼ぶことがあります。
 
 python側で少しコードを書くだけで棋譜解析や並列自己対局などができます。
 
@@ -49,16 +49,21 @@ def test_ayane():
     usi.disconnect()
 
 if __name__ == "__main__":
-    ayane_test()
+    test_ayane()
 ```
 
 ね、簡単でしょう？
 
-- Ayaneを使えば、エンジン同士の対局をさせるコードがわずか15行程度で書けます。
+- Ayaneを使えば、エンジン同士の対局をさせるのも、わずかなコードで実現できます。
   - [unit-test.py](source/unit_test.py)
 
 - sfen文字列の取扱いなどは、下記のライブラリを使うと便利だと思います。
   - [python-shogi](https://github.com/gunyarakun/python-shogi)
+
+
+# ニュース記事
+
+- 2019/06/28 : [pythonからやねうら王を駆動できるアダプターAyane、公開しました](http://yaneuraou.yaneu.com/2019/06/28/python%e3%81%8b%e3%82%89%e3%82%84%e3%81%ad%e3%81%86%e3%82%89%e7%8e%8b%e3%82%92%e9%a7%86%e5%8b%95%e3%81%a7%e3%81%8d%e3%82%8b%e3%82%a2%e3%83%80%e3%83%97%e3%82%bf%e3%83%bcayane%e3%80%81%e5%85%ac%e9%96%8b/)
 
 
 # Ayaneru-server(あやねるサーバー)
