@@ -7,11 +7,13 @@ class TestAyane(unittest.TestCase):
     # 通常探索用の思考エンジンの接続テスト
     # 同期的に思考させる。
     def test_ayane1(self):
+        print("test_ayane1 : ")
+
         # エンジンとやりとりするクラス
         usi = ayane.UsiEngine()
 
         # デバッグ用にエンジンとのやりとり内容を標準出力に出力する。
-        #usi.debug_print = True
+        # usi.debug_print = True
 
         # エンジンオプション自体は、基本的には"engine_options.txt"で設定する。(やねうら王のdocs/を読むべし)
         # 特定のエンジンオプションをさらに上書きで設定できる
@@ -45,6 +47,7 @@ class TestAyane(unittest.TestCase):
 
     # 非同期で思考させるテスト
     def test_ayane2(self):
+        print("test_ayane2 : ")
 
         usi = ayane.UsiEngine()
         # usi.debug_print = True
@@ -72,6 +75,8 @@ class TestAyane(unittest.TestCase):
 
     # ある局面に対して、余詰め(bestmove以外のmateの指し手)があるかどうかを調べるテスト
     def test_ayane3(self):
+        print("test_ayane3 : ")
+
         sfens = [
             "sfen 5R3/8k/9/9/7+b1/9/PP1+p5/LS7/KN7 b GSNrb3g2s2n3l15p",
             "sfen 5B1k1/9/9/5R3/9/9/1+P7/PP1+p5/K+P7 b Srb4g3s4n4l13p",
@@ -106,6 +111,7 @@ class TestAyane(unittest.TestCase):
 
     # エンジン二つ起動して、対局させるテスト
     def test_ayane4(self):
+        print("test_ayane4 : ")
 
         # エンジン二つ
         usis = []

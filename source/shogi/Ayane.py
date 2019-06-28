@@ -11,6 +11,9 @@ from enum import IntEnum
 # しかし、それ以上に利用しようとする場合、多少はUSIプロトコルについて理解している必要があります。
 # cf.「USIプロトコルとは」: http://shogidokoro.starfree.jp/usi.html
 
+# sfen文字列の取扱いなどは、下記のライブラリを使うと便利だと思います。
+# https://github.com/gunyarakun/python-shogi
+
 
 # UsiEngineクラスのなかで用いるエンジンの状態を表現するenum
 class UsiEngineState(Enum):
@@ -19,6 +22,7 @@ class UsiEngineState(Enum):
     WaitReadyOk     = 3     # "readyok"待ち
     WaitCommand     = 4     # "position"コマンド等を送信できる状態になった
     WaitBestmove    = 5     # "go"コマンドを送ったので"bestmove"が返ってくるのを待っている状態
+    WaitOneLine     = 6     # "moves"など1行応答を返すコマンドを送信したのでその1行が返ってくるのを待っている状態
     Disconnected    = 999   # 終了した
 
 
@@ -370,16 +374,14 @@ class UsiEngine():
     # disconnectedになってしまったら例外をraise
     def wait_for_state(self,state : UsiEngineState):
         while True:
-            if  self.engine_state == state:
-                return
-            if self.engine_state == UsiEngineState.Disconnected:
-                raise ValueError("engine_state == UsiEngineState.Disconnected.")
-            
-            # Eventが変化するのを待機する。
-            self.__state_changed.wait()
-
-            # 滅多に起きてこないのでここはsleep不要
-            #time.sleep(0)
+            with self.__state_changed_cv:
+                if self.engine_state == state:
+                    return
+                if self.engine_state == UsiEngineState.Disconnected:
+                    raise ValueError("engine_state == UsiEngineState.Disconnected.")
+                
+                # Eventが変化するのを待機する。
+                self.__state_changed_cv.wait()
 
 
     # position_command()で設定した局面に対する合法手の指し手の集合を得る。
@@ -389,15 +391,12 @@ class UsiEngine():
     def get_moves(self) -> str:
         self.wait_for_state(UsiEngineState.WaitCommand)
         self.__last_received_line = None
-        self.send_command("moves")
+        with self.__state_changed_cv:
+            self.send_command("moves")
 
-        # エンジン側から一行受信するまでblockingして待機
-        while True:
-            if self.__last_received_line is not None:
-                return self.__last_received_line
-            time.sleep(0.001)
-
-        # コマンドをエンジンに1行送って1行受け取るだけなのでself.engine_stateは変更しない。
+            # エンジン側から一行受信するまでblockingして待機
+            self.__state_changed_cv.wait_for(lambda : self.__last_received_line is not None)
+            return self.__last_received_line
 
 
     # --- エンジンに対して送信するコマンド ---
@@ -444,8 +443,8 @@ class UsiEngine():
     # bestmoveが返ってくるのを待つ
     # self.think_result.bestmoveからbestmoveを取り出すことができる。
     def wait_bestmove(self):
-        while self.think_result.bestmove is None:
-            time.sleep(0.001)
+        with self.__state_changed_cv:
+            self.__state_changed_cv.wait_for(lambda : self.think_result.bestmove is not None)
 
 
     # --- エンジンに対するコマンド、ここまで ---
@@ -498,6 +497,9 @@ class UsiEngine():
                 # positionコマンドは、WaitCommand状態でないと送信できない。
                 elif token == "position":
                     self.wait_for_state(UsiEngineState.WaitCommand)
+                elif token == "moves":
+                    self.wait_for_state(UsiEngineState.WaitCommand)
+                    self.__change_state(UsiEngineState.WaitOneLine)
 
                 self.__proc.stdin.write(message + '\n')
                 self.__proc.stdin.flush()
@@ -524,6 +526,7 @@ class UsiEngine():
         print(mes)
         self.__lock_object.release()
 
+
     # self.engine_stateを変更する。
     def __change_state(self,state : UsiEngineState):
         # 切断されたあとでは変更できない
@@ -535,8 +538,10 @@ class UsiEngine():
                 raise ValueError("{0} : can't send go command when self.engine_state != UsiEngineState.WaitCommand" \
                     .format(self.__instance_id))
 
-        self.engine_state = state
-        self.__state_changed.set()
+        with self.__state_changed_cv:
+            self.engine_state = state
+            self.__state_changed_cv.notify_all()
+
 
     # エンジン側から送られてきたメッセージを解釈する。
     def __dispatch_message(self,message:str):
@@ -548,28 +553,33 @@ class UsiEngine():
         self.__last_received_line = message
 
         # 先頭の文字列で判別する。
-        messages = message.split()
-        if len(messages) :
-            token = messages[0]
+        index = message.find(' ')
+        if index == -1:
+            token = message
         else:
-            token = ""
+            token = message[0:index]
 
         # --- handleするメッセージ
 
+        # 1行待ちであったなら、これでハンドルしたことにして返る。
+        if self.engine_state == UsiEngineState.WaitOneLine:
+            self.__change_state(UsiEngineState.WaitCommand)
+            return
         # "isready"に対する応答
-        if token == "readyok":
+        elif token == "readyok":
             self.__change_state(UsiEngineState.WaitCommand)
         # "go"に対する応答
         elif token == "bestmove":
-            self.__handle_bestmove(messages)
+            self.__handle_bestmove(message)
             self.__change_state(UsiEngineState.WaitCommand)
         # エンジンの読み筋に対する応答
         elif token == "info":
-            self.__handle_info(messages)
+            self.__handle_info(message)
 
 
     # エンジンから送られてきた"bestmove"を処理する。
-    def __handle_bestmove(self,messages:[]):
+    def __handle_bestmove(self,message:str):
+        messages = message.split()
         if len(messages) >= 4 and messages[2] == "ponder":
             self.think_result.ponder = messages[3]
         
@@ -581,14 +591,14 @@ class UsiEngine():
 
 
     # エンジンから送られてきた"info ..."を処理する。
-    def __handle_info(self,messages:str):
+    def __handle_info(self,message:str):
 
         # まだ"go"を発行していないのか？
         if self.think_result is None:
             return 
 
         # 解析していく
-        scanner = Scanner(messages,1)
+        scanner = Scanner(message.split(),1)
         pv = UsiThinkPV()
 
         # multipvの何番目の読み筋であるか
@@ -683,8 +693,8 @@ class UsiEngine():
     # print()を呼び出すときのlock object
     __lock_object = threading.Lock()
 
-    # engine_stateが変化したときに起きるevent
-    __state_changed = threading.Event()
+    # engine_stateが変化したときのイベント用
+    __state_changed_cv = threading.Condition()
 
     # このクラスのインスタンスの識別用ID。
     __instance_id = 0
