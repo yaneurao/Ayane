@@ -337,6 +337,10 @@ class UsiEngine():
         self.__write_thread.start()
 
 
+    # エンジンのconnect()が呼び出されたあとであるか
+    def is_connected(self) -> bool:
+        return self.__proc is not None
+
     # エンジン用のプロセスにコマンドを送信する(プロセスの標準入力にメッセージを送る)
     def send_command(self, message : str):
         self.__send_queue.put(message)
@@ -500,6 +504,8 @@ class UsiEngine():
                 elif token == "moves":
                     self.wait_for_state(UsiEngineState.WaitCommand)
                     self.__change_state(UsiEngineState.WaitOneLine)
+                elif token == "usinewgame" or token == "gameover":
+                    self.wait_for_state(UsiEngineState.WaitCommand)
 
                 self.__proc.stdin.write(message + '\n')
                 self.__proc.stdin.flush()
@@ -690,6 +696,9 @@ class UsiEngine():
     # 最後にエンジン側から受信した1行
     __last_received_line = None
 
+    # エンジンにコマンドを送信するためのqueue(送信スレッドとのやりとりに用いる)
+    __send_queue = Queue()
+
     # print()を呼び出すときのlock object
     __lock_object = threading.Lock()
 
@@ -701,6 +710,148 @@ class UsiEngine():
 
     # 静的メンバ変数とする。UsiEngineのインスタンスの数を記録する
     __static_count = 0
+
+
+# 手番を表現するEnum
+class Turn(IntEnum) :
+    BLACK = 0   # 先手
+    WHITE = 1   # 後手
+
+    # 反転させた手番を返す
+    def flip(self) -> int: # Turn:
+        return Turn(int(self) ^ 1)
+
+
+# ゲームの終局状態を示す
+class GameResult(IntEnum):
+    BLACK_WIN    = 0  # 先手勝ち
+    WHITE_WIN    = 1  # 後手勝ち
+    DRAW         = 2  # 千日手引き分け(現状、サポートしていない)
+    MAX_MOVES    = 3  # 最大手数に到達
+    ILLEGAL_MOVE = 4  # 反則の指し手が出た
+    INIT         = 5  # ゲーム開始前
+    PLAYING      = 6  # まだゲーム中
+
+    # ゲームは引き分けであるのか？
+    def is_draw(self)->bool:
+        return self == GameResult.DRAW or self == GameResult.MAX_MOVES
+
+    # 先手か後手が勝利したか？
+    def is_black_or_white_win(self)->bool:
+        return self == GameResult.BLACK_WIN or self == GameResult.WHITE_WIN
+
+    # ゲームの決着がついているか？
+    def is_gameover(self)->bool:
+        return self != GameResult.INIT and self != GameResult.PLAYING
+
+
+# 1対1での対局を管理してくれる補助クラス
+class AyaneruServer:
+
+    # 引き分けとなる手数(これはユーザー側で変更して良い)
+    moves_to_draw = 320
+
+    # --- read only members
+
+    # 現在の手番側
+    side_to_move = Turn.BLACK
+
+    # 現在の局面のsfen("startpos moves ..."の形)
+    sfen = "startpos moves"
+
+    # 初期局面からの手数
+    game_ply = 1
+
+    # 現在のゲーム状態
+    # ゲームが終了したら、game_result.is_gameover() == Trueになる。
+    game_result = GameResult.INIT
+
+    # エンジン2つ
+    engines = [UsiEngine(),UsiEngine()]
+
+    # ゲームを初期化して、対局を開始する。
+    # エンジンはconnectされているものとする。
+    # あとは勝手に思考する。
+    # ゲームが終了するなどしたらgame_resultの値がINIT,PLAYINGから変化する。
+    # そのあとself.sfenを取得すればそれが対局棋譜。
+    def game_start(self):
+
+        # ゲーム対局中ではないか？これは前提条件の違反
+        if self.game_result == GameResult.PLAYING:
+            raise ValueError("must be gameover.")
+
+        for engine in self.engines:
+            if not engine.is_connected():
+                raise ValueError("engine is not connected.")
+
+        self.side_to_move = Turn.BLACK
+        self.sfen = "startpos moves"
+        self.game_result = GameResult.PLAYING
+        self.game_ply = 1
+        for engine in self.engines:
+            engine.send_command("usinewgame") # いまから対局はじまるよー
+
+        # 対局用のスレッドを作成するのがお手軽か..
+        self.__game_thread = threading.Thread(target=self.__game_worker)
+        self.__game_thread.start()
+
+    # 対局スレッド
+    def __game_worker(self):
+        while self.game_ply < self.moves_to_draw:
+            engine = self.engine(self.side_to_move)
+            engine.usi_position(self.sfen)
+            engine.usi_go_and_wait_bestmove("btime 0 wtime 0 byoyomi 100")
+            # TODO : ここの持ち時間等、事前に設定できるようにする。
+
+            bestmove = engine.think_result.bestmove
+            if bestmove == "resign":
+                # 相手番の勝利
+                self.game_result = GameResult(self.side_to_move.flip())
+                self.__game_over()
+                return 
+            self.sfen = self.sfen + " " + bestmove
+            self.game_ply += 1
+            self.side_to_move = self.side_to_move.flip()
+            # 千日手引き分けを処理しないといけないが、ここで判定するのは難しいので
+            # max_movesで抜けることを期待。
+
+        # 引き分けで終了
+        self.game_result = GameResult.MAX_MOVES
+        self.__game_over()
+
+    # ゲームオーバーの処理
+    # エンジンに対してゲームオーバーのメッセージを送信する。
+    def __game_over(self):
+        result = self.game_result
+        if result.is_draw():
+            for engine in self.engines:
+                engine.send_command("gameover draw")
+        elif result.is_black_or_white_win():
+            # resultをそのままintに変換したほうの手番側が勝利
+            self.engine(Turn(result)       ).send_command("gameover win")
+            self.engine(Turn(result).flip()).send_command("gameover lose")
+        else:
+            # それ以外サポートしてない
+            raise ValueError("illegal result")
+
+    # 手番側のエンジンを取得する
+    def engine(self,turn:Turn) -> UsiEngine:
+        return self.engines[int(turn)]
+
+    # エンジンを終了させる
+    def terminate(self):
+        for engine in self.engines:
+            engine.disconnect()
+
+    # エンジンを終了させる
+    def __del__(self):
+        self.terminate()
+
+    # --- private memebers ---
+
+    # 対局用スレッド
+    __game_thread = None
+
 
 
 if __name__ == "__main__":

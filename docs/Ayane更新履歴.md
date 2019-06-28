@@ -1,4 +1,14 @@
 
+■　2019/06/29
+
+
+- Turn enum追加
+- GameResult追加
+- AyaneruServerクラス追加(作業中) , 持ち時間設定以外動くようになった(気がする)
+- unit_test.py →　unit_test1.pyにリネーム
+- unit_test2.py追加
+
+
 ■　2019/06/28
 
 

@@ -55,7 +55,7 @@ if __name__ == "__main__":
 ね、簡単でしょう？
 
 - Ayaneを使えば、エンジン同士の対局をさせるのも、わずかなコードで実現できます。
-  - [unit-test.py](source/unit_test.py)
+  - [unit-test.py](source/unit_test1.py)
 
 - sfen文字列の取扱いなどは、下記のライブラリを使うと便利だと思います。
   - [python-shogi](https://github.com/gunyarakun/python-shogi)
