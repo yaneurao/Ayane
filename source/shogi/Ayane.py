@@ -54,27 +54,29 @@ class UsiEvalValue(int):
         
     # 詰まされるスコアであるか
     def is_mated_score(self):
-        return self <= UsiEvalSpecialValue.ValueMated <= self and self <= UsiEvalSpecialValue.ValueMatedInMaxPly
+        return UsiEvalSpecialValue.ValueMated <= self and self <= UsiEvalSpecialValue.ValueMatedInMaxPly
 
     # 評価値を文字列化する。
     def to_string(self):
         if self.is_mate_score():
-            return "mate " + UsiEvalSpecialValue.ValueMate - self
+            return "mate " + str(UsiEvalSpecialValue.ValueMate - self)
         elif self.is_mated_score():
-            return "mated " + self - UsiEvalSpecialValue.ValueMated
+            # マイナスの値で表現する。self == UsiEvalSpecialValue.ValueMated のときは -0と表現する。
+            return "mate -" + str(self - UsiEvalSpecialValue.ValueMated)
         return "cp " + str(self)
         
-    # ply手詰みのスコアを数値化する    
+    # ply手詰みのスコアを数値化する
+    # UsiEvalValueを返したいが、このクラスの定義のなかでは自分の型を明示的に返せないようで..(コンパイラのバグでは..)   
     # ply : integer
     @staticmethod
-    def mate_in_ply(ply : int):
-        return int(UsiEvalSpecialValue.ValueMate) - ply
+    def mate_in_ply(ply : int): # -> UsiEvalValue
+        return UsiEvalValue(int(UsiEvalSpecialValue.ValueMate) - ply)
 
     # ply手で詰まされるスコアを数値化する
     # ply : integer
     @staticmethod
-    def mated_in_ply(ply : int):
-        return -int(UsiEvalSpecialValue.ValueMate) + ply
+    def mated_in_ply(ply : int): # -> UsiEvalValue:
+        return UsiEvalValue(-int(UsiEvalSpecialValue.ValueMate) + ply)
 
 
 # 読み筋として返ってきた評価値がfail low/highしたときのスコアであるか
@@ -280,7 +282,7 @@ class UsiEngine():
     # engineに渡すOptionを設定する。
     # 基本的にエンジンは"engine_options.txt"で設定するが、Threads、Hashなどあとから指定したいものもあるので
     # それらについては、connectの前にこのメソッドを呼び出して設定しておく。
-    # 例) usi.set_option({"Hash":"128","Threads":"8"})
+    # 例) usi.set_options({"Hash":"128","Threads":"8"})
     def set_options(self,options : dict):
         self.__options = options
 
@@ -380,14 +382,6 @@ class UsiEngine():
             #time.sleep(0)
 
 
-    # 局面をエンジンに送信する。sfen形式。
-    # 例 : "startpos moves ..."とか"sfen ... moves ..."みたいな形式 
-    # 「USIプロトコル」でググれ。
-    def send_position(self,sfen : str):
-        self.wait_for_state(UsiEngineState.WaitCommand)
-        self.send_command("position " + sfen)
-
-
     # position_command()で設定した局面に対する合法手の指し手の集合を得る。
     # USIプロトコルでの表記文字列で返ってくる。
     # すぐに返ってくるはずなのでブロッキングメソッド
@@ -407,6 +401,16 @@ class UsiEngine():
 
 
     # --- エンジンに対して送信するコマンド ---
+    # メソッド名の先頭に"usi_"と付与してあるものは、エンジンに対してUSIプロトコルで送信するの意味。
+
+
+    # [ASYNC]
+    # 局面をエンジンに送信する。sfen形式。
+    # 例 : "startpos moves ..."とか"sfen ... moves ..."みたいな形式 
+    # 「USIプロトコル」でググれ。
+    def usi_position(self,sfen : str):
+        self.send_command("position " + sfen)
+
 
     # [ASYNC]
     # position_command()のあと、エンジンに思考させる。
@@ -488,18 +492,21 @@ class UsiEngine():
                 if token == "stop":
                     if self.engine_state != UsiEngineState.WaitBestmove:
                         continue
-                # 終了コマンドを送信したなら自発的にこのスレッドを終了させる。
                 elif token == "go":
                     self.wait_for_state(UsiEngineState.WaitCommand)
                     self.__change_state(UsiEngineState.WaitBestmove)
+                # positionコマンドは、WaitCommand状態でないと送信できない。
+                elif token == "position":
+                    self.wait_for_state(UsiEngineState.WaitCommand)
 
                 self.__proc.stdin.write(message + '\n')
                 self.__proc.stdin.flush()
                 if self.debug_print:
-                    self.__print("[<] " + message)
+                    self.__print("[{0}:<] {1}".format(self.__instance_id , message))
 
                 if token == "quit":
                     self.__change_state(UsiEngineState.Disconnected)
+                    # 終了コマンドを送信したなら自発的にこのスレッドを終了させる。
                     break
 
                 retcode = self.__proc.poll()
@@ -507,8 +514,9 @@ class UsiEngine():
                     break
                 
         except:
-            # print("write worker exception")
-            self.exit_state = "Engine error write_worker failed , EngineFullPath = " + self.engine_fullpath
+            self.exit_state = "{0} : Engine error write_worker failed , EngineFullPath = {1}" \
+                .format(self.__instance_id , self.engine_fullpath)
+
 
     # 排他制御をするprint(このクラスからの出力に関してのみ)
     def __print(self,mes : str):
@@ -524,7 +532,8 @@ class UsiEngine():
         # goコマンドを送ってWaitBestmoveに変更する場合、現在の状態がWaitCommandでなければならない。
         if state == UsiEngineState.WaitBestmove:
             if self.engine_state != UsiEngineState.WaitCommand:
-                raise ValueError("can't send go command when self.engine_state != UsiEngineState.WaitCommand")
+                raise ValueError("{0} : can't send go command when self.engine_state != UsiEngineState.WaitCommand" \
+                    .format(self.__instance_id))
 
         self.engine_state = state
         self.__state_changed.set()
@@ -533,7 +542,7 @@ class UsiEngine():
     def __dispatch_message(self,message:str):
         # デバッグ用に受け取ったメッセージを出力するのか？
         if self.debug_print or (self.error_print and message.find("Error") > -1):
-            self.__print("[>] " + message)
+            self.__print("[{0}:>] {1}".format(self.__instance_id , message))
 
         # 最後に受信した文字列はここに積む約束になっている。
         self.__last_received_line = message
@@ -609,9 +618,12 @@ class UsiEngine():
                 elif token == "score":
                     token = scanner.get_token()
                     if token == "mate":
-                        pv.eval = UsiEvalValue.mate_in_ply(scanner.get_integer())
-                    elif token == "mated":
-                        pv.eval = UsiEvalValue.mated_in_ply(scanner.get_integer())
+                        is_minus = scanner.peek_token()[0] == '-'
+                        ply = scanner.get_integer()
+                        if not is_minus:
+                            pv.eval = UsiEvalValue.mate_in_ply(ply)
+                        else:
+                            pv.eval = UsiEvalValue.mated_in_ply(-ply)
                     elif token == "cp":
                         pv.eval = UsiEvalValue(scanner.get_integer())
 
@@ -630,13 +642,22 @@ class UsiEngine():
                 else:
                     raise ValueError("ParseError")
             except:
-                print("ParseError : token = " + token + " , line = " + scanner.get_original_text())
+                self.__print("{0} : ParseError : token = {1}  , line = {2}" \
+                    .format(self.__instance_id , token ,  scanner.get_original_text()))
 
         if multipv >= 1:
             # 配列の要素数が足りないなら、追加しておく。
             while len(self.think_result.pvs) < multipv:
                 self.think_result.pvs.append(None)
             self.think_result.pvs[multipv - 1] = pv
+
+    def __init__(self):
+        # instance idを設定しておく。
+        # 念の為、lockしてから参照/インクリメントを行う。
+        self.__lock_object.acquire()
+        self.__instance_id = UsiEngine.__static_count
+        UsiEngine.__static_count += 1
+        self.__lock_object.release()
 
     # デストラクタで通信の切断を行う。
     def __del__(self):
@@ -665,6 +686,12 @@ class UsiEngine():
     # engine_stateが変化したときに起きるevent
     __state_changed = threading.Event()
 
+    # このクラスのインスタンスの識別用ID。
+    __instance_id = 0
+
+    # 静的メンバ変数とする。UsiEngineのインスタンスの数を記録する
+    __static_count = 0
+
 
 if __name__ == "__main__":
     # テスト用のコード
@@ -672,7 +699,7 @@ if __name__ == "__main__":
     usi.debug_print = True
     usi.connect("exe/YaneuraOu.exe")
     print(usi.engine_path)
-    usi.send_position("startpos moves 7g7f")
+    usi.usi_position("startpos moves 7g7f")
     print("moves = " + usi.get_moves())
     usi.disconnect()
     print(usi.engine_state)
