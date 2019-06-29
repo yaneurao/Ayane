@@ -16,7 +16,7 @@ import shogi.Ayane
 
 # 通常探索用の思考エンジンの接続テスト
 # 同期的に思考させる。
-def test_ayane():
+def test_ayane1():
 
     # エンジンとやりとりするクラス
     usi = ayane.UsiEngine()
@@ -49,13 +49,13 @@ def test_ayane():
     usi.disconnect()
 
 if __name__ == "__main__":
-    test_ayane()
+    test_ayane1()
 ```
 
 ね、簡単でしょう？
 
 - Ayaneを使えば、エンジン同士の対局をさせるのも、わずかなコードで実現できます。
-  - [unit-test.py](source/unit_test1.py)
+  - [unit-test1.py](source/unit_test1.py)
 
 - sfen文字列の取扱いなどは、下記のライブラリを使うと便利だと思います。
   - [python-shogi](https://github.com/gunyarakun/python-shogi)
@@ -66,13 +66,52 @@ if __name__ == "__main__":
 - 2019/06/28 : [pythonからやねうら王を駆動できるアダプターAyane、公開しました](http://yaneuraou.yaneu.com/2019/06/28/python%e3%81%8b%e3%82%89%e3%82%84%e3%81%ad%e3%81%86%e3%82%89%e7%8e%8b%e3%82%92%e9%a7%86%e5%8b%95%e3%81%a7%e3%81%8d%e3%82%8b%e3%82%a2%e3%83%80%e3%83%97%e3%82%bf%e3%83%bcayane%e3%80%81%e5%85%ac%e9%96%8b/)
 
 
-# Ayaneru-server(あやねるサーバー)
+## あやねるサーバー
 
 自己対局のための補助クラス。
-鋭意製作中。
+
+```python
+import shogi.Ayane as ayane
+import time
+
+# あやねるサーバーを使った対局例    
+def test_ayane5(self):
+    print("test_ayane5 : ")
+
+    server = ayane.AyaneruServer()
+    for engine in server.engines:
+        engine.set_options({"Hash":"128","Threads":"1","NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"320" \
+            , "MinimumThinkingTime":"0"})
+        engine.connect("exe/YaneuraOu.exe")
+
+    # 持ち時間設定。
+    server.set_time_setting("byoyomi 100")                 # 1手0.1秒
+    # server.set_time_setting("time 1000 inc 2000")        # 1秒 + 1手2秒
+
+    # これで対局が開始する
+    server.game_start()
+
+    # 対局が終了するのを待つ
+    while not server.game_result.is_gameover():
+        time.sleep(1)
+
+    # 対局棋譜の出力
+    print("game sfen = " + server.sfen)
+    print("game_result = " + str(server.game_result))
+
+    server.terminate()
+
+if __name__ == "__main__":
+    test_ayane5()
+```
+
+## マルチあやねるサーバー
+
+あやねるサーバーの並列対局版。
+近日公開予定。
 
 
-# Ayaneru-gate(あやねるゲート)
+## あやねるゲート
 
 Ayaneを使った複数ソフト間の対局を自動化するスクリプト。
 近日公開予定。

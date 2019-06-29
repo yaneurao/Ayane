@@ -746,6 +746,13 @@ class GameResult(IntEnum):
     def is_gameover(self)->bool:
         return self != GameResult.INIT and self != GameResult.PLAYING
 
+    # 1P側が勝利したのか？
+    # flip_turn : AyaneruServer.flip_turnを渡す
+    def is_1p_win(self,flip_turn:bool) -> bool:
+        # ""== True"とかクソダサいけど、対称性があって綺麗なのでこう書いておく。
+        return (self == GameResult.BLACK_WIN and flip_turn == False)\
+            or (self == GameResult.WHITE_WIN and flip_turn ==  True)
+
 
 # 1対1での対局を管理してくれる補助クラス
 class AyaneruServer:
@@ -753,13 +760,19 @@ class AyaneruServer:
     # 引き分けとなる手数(これはユーザー側で変更して良い)
     moves_to_draw = 320
 
+    # 先後プレイヤーを入れ替える機能。
+    # self.engine(Turn)でエンジンを取得するときに利いてくる。
+    # False : 1P = 先手 , 2P = 後手
+    # True  : 1P = 後手 , 2P = 先手
+    flip_turn = False
+
     # --- read only members
 
     # 現在の手番側
     side_to_move = Turn.BLACK
 
-    # 現在の局面のsfen("startpos moves ..."の形)
-    sfen = "startpos moves"
+    # 現在の局面のsfen("startpos moves ..."や、"sfen ... move ..."の形)
+    sfen = "startpos"
 
     # 初期局面からの手数
     game_ply = 1
@@ -768,14 +781,18 @@ class AyaneruServer:
     # ゲームが終了したら、game_result.is_gameover() == Trueになる。
     game_result = GameResult.INIT
 
-    # エンジン2つ
+    # エンジン2つ [1P側、2P側]
     engines = [UsiEngine(),UsiEngine()]
 
-    # 手番側のエンジンを取得する
+    # turn手番側のエンジンを取得する
+    # flip_turn == Trueのときは、先手側がengines[1]、後手側がengines[0]になるので注意。
     def engine(self,turn:Turn) -> UsiEngine:
+        if self.flip_turn:
+            turn = turn.flip()
         return self.engines[int(turn)]
 
-    # 持ち時間の残り。
+    # turn手番側の持ち時間の残り。
+    # __rest_timeはflip_turnの影響を受けない。
     def rest_time(self,turn:Turn)->int:
         return self.__rest_time[int(turn)]
 
@@ -829,7 +846,9 @@ class AyaneruServer:
     # あとは勝手に思考する。
     # ゲームが終了するなどしたらgame_resultの値がINIT,PLAYINGから変化する。
     # そのあとself.sfenを取得すればそれが対局棋譜。
-    def game_start(self):
+    # start_sfen : 開始局面をsfen形式で。
+    # 例 : "startpos" , "startpos moves 7f7g" , "sfen ..." , "sfen ... moves xxx"など。
+    def game_start(self , start_sfen : str = "startpos"):
 
         # ゲーム対局中ではないか？これは前提条件の違反
         if self.game_result == GameResult.PLAYING:
@@ -840,7 +859,12 @@ class AyaneruServer:
                 raise ValueError("engine is not connected.")
 
         self.side_to_move = Turn.BLACK
-        self.sfen = "startpos moves"
+        
+        # 局面の設定
+        self.sfen = start_sfen
+        if "moves" not in self.sfen:
+            self.sfen += " moves"
+
         self.game_result = GameResult.PLAYING
         self.game_ply = 1
         for engine in self.engines:
@@ -857,6 +881,8 @@ class AyaneruServer:
     def __game_worker(self):
 
         while self.game_ply < self.moves_to_draw:
+            # 手番側に属するエンジンを取得する
+            # ※　flip_turn == Trueのときは相手番のほうのエンジンを取得するので注意。
             engine = self.engine(self.side_to_move)
             engine.usi_position(self.sfen)
 
@@ -878,6 +904,7 @@ class AyaneruServer:
 
             # 使用した時間を1秒単位で繰り上げて、残り時間から減算
             # プロセス間の通信遅延を考慮して300[ms]ほど引いておく。(秒読みの場合、どうせ使い切るので問題ないはず..)
+            # 0.3秒以内に指すと0秒で指したことになるけど、いまのエンジン、詰みを発見したとき以外そういう挙動にはなりにくいのでまあいいや。
             elapsed_time = (end_time - start_time) - 0.3 # [ms]に変換
             elapsed_time = int(elapsed_time + 0.999) * 1000
             if elapsed_time < 0:
@@ -901,6 +928,12 @@ class AyaneruServer:
                 self.game_result = GameResult(self.side_to_move.flip())
                 self.__game_over()
                 return 
+            if bestmove == "win":
+                # 宣言勝ち(手番側の勝ち)
+                # 局面はノーチェックだが、まあエンジン側がバグっていなければこれでいいだろう)
+                self.game_result = GameResult(self.side_to_move)
+                self.__game_over()
+                return
 
             self.sfen = self.sfen + " " + bestmove
             self.game_ply += 1
@@ -949,7 +982,8 @@ class AyaneruServer:
 
     # --- private memebers ---
 
-    # 持ち時間残り
+    # 持ち時間残り [先手側 , 後手側] 単位はms。
+    # flip_turnの影響は受けない。
     __rest_time = [0,0]
 
     # 持ち時間設定
@@ -962,9 +996,14 @@ class AyaneruServer:
     __stop_thread = False
 
 
+# 並列自己対局のためのクラス
+class MultiAyaneruServer:
+    pass
+    # TODO : 製作中
+
 
 if __name__ == "__main__":
-    # テスト用のコード
+    # 最低限のテスト用コード
     usi = UsiEngine()
     usi.debug_print = True
     usi.connect("exe/YaneuraOu.exe")
