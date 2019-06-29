@@ -104,41 +104,45 @@ class UsiBound(Enum):
 # 送られてこなかった値に関してはNoneになっている。
 class UsiThinkPV():
 
-    # PV文字列。最善応手列。sfen表記文字列にて。
-    # 例 : "7g7f 8c8d"みたいなの。あとは、split()して使ってもらえればと。
-    # sfen以外の特殊表記として以下の文字列が混じっていることがあります。(やねうら王のdocs/解説.txtを参考にすること。)
-    #  "rep_draw" : 普通の千日手
-    #  "rep_sup"  : 優等局面(盤上の駒配置が同一で手駒が一方的に増えている局面への突入。相手からの歩の成り捨て～同金～歩打ち～金引きみたいな循環)
-    #  "rep_inf"  : 劣等局面(盤上の駒配置が同一で手駒が一方的に減っている局面への突入)
-    #  "rep_win"  : 王手を含む千日手(反則勝ち) // これ実際には出力されないはずだが…。
-    #  "rep_lose" : 王手を含む千日手(反則負け) // これ実際には出力されないはずだが…。
-    #  読み筋が宣言勝ちのときは読み筋の末尾に "win"
-    #  投了の局面で呼び出されたとき "resign"
-    pv = None # str
+    def __init__(self):
+        # --- public members ---
 
-    # 評価値(整数値)
-    eval = None # UsiEvalValue
+        # PV文字列。最善応手列。sfen表記文字列にて。
+        # 例 : "7g7f 8c8d"みたいなの。あとは、split()して使ってもらえればと。
+        # sfen以外の特殊表記として以下の文字列が混じっていることがあります。(やねうら王のdocs/解説.txtを参考にすること。)
+        #  "rep_draw" : 普通の千日手
+        #  "rep_sup"  : 優等局面(盤上の駒配置が同一で手駒が一方的に増えている局面への突入。相手からの歩の成り捨て～同金～歩打ち～金引きみたいな循環)
+        #  "rep_inf"  : 劣等局面(盤上の駒配置が同一で手駒が一方的に減っている局面への突入)
+        #  "rep_win"  : 王手を含む千日手(反則勝ち) // これ実際には出力されないはずだが…。
+        #  "rep_lose" : 王手を含む千日手(反則負け) // これ実際には出力されないはずだが…。
+        #  読み筋が宣言勝ちのときは読み筋の末尾に "win"
+        #  投了の局面で呼び出されたとき "resign"
+        pv = None # str
 
-    # 読みの深さ
-    depth = None # int
+        # 評価値(整数値)
+        eval = None # UsiEvalValue
 
-    # 読みの選択深さ
-    seldepth = None # int
+        # 読みの深さ
+        depth = None # int
 
-    # 読みのノード数
-    nodes = None # int
+        # 読みの選択深さ
+        seldepth = None # int
 
-    # "go"を送信してからの経過時刻。[ms]
-    time = None # int
+        # 読みのノード数
+        nodes = None # int
 
-    # hash使用率 1000分率
-    hashfull = None # int
+        # "go"を送信してからの経過時刻。[ms]
+        time = None # int
 
-    # nps
-    nps = None # int
+        # hash使用率 1000分率
+        hashfull = None # int
 
-    # bound
-    bound = None # UsiBound
+        # nps
+        nps = None # int
+
+        # bound
+        bound = None # UsiBound
+
 
     # 表示できる文字列化して返す。(主にデバッグ用)
     def to_string(self) -> str:
@@ -169,20 +173,25 @@ class UsiThinkPV():
 # 思考エンジンに対して送った"go"コマンドに対して思考エンジンから返ってきた情報を保持する構造体
 class UsiThinkResult():
 
-    # 最善手(sfen表記文字列にて。例:"7g7f")
-    # "bestmove"を受信するまではNoneが代入されている。
-    # "resign"(投了) , "win"(宣言勝ち) のような文字列もありうる。
-    bestmove = None # str
+    def __init__(self):
 
-    # 最善手を指したあとの相手の指し手。(sfen表記文字列にて)
-    # ない場合は、文字列で"none"。
-    ponder = None # str
+        # --- public members ---
 
-    # 最善応手列
-    # UsiThinkPVの配列。
-    # MultiPVのとき、その数だけ要素を持つ配列になる。
-    # 最後に送られてきた読み筋がここに格納される。
-    pvs = [] # List[UsiThinkPV]
+        # 最善手(sfen表記文字列にて。例:"7g7f")
+        # "bestmove"を受信するまではNoneが代入されている。
+        # "resign"(投了) , "win"(宣言勝ち) のような文字列もありうる。
+        self.bestmove = None # str
+
+        # 最善手を指したあとの相手の指し手。(sfen表記文字列にて)
+        # ない場合は、文字列で"none"。
+        self.ponder = None # str
+
+        # 最善応手列
+        # UsiThinkPVの配列。
+        # MultiPVのとき、その数だけ要素を持つ配列になる。
+        # 最後に送られてきた読み筋がここに格納される。
+        self.pvs = [] # List[UsiThinkPV]
+
 
     # このインスタンスの内容を文字列化する。(主にデバッグ用)
     def to_string(self)->str:
@@ -258,38 +267,83 @@ class Scanner:
 # USIプロトコルを用いて思考エンジンとやりとりするためのwrapperクラス
 class UsiEngine():
 
-    # 通信内容をprintで表示する(デバッグ用)
-    debug_print = False
+    def __init__(self):
 
-    # エンジン側から"Error"が含まれている文字列が返ってきたら、それをprintで表示する。
-    # これはTrueにしておくのがお勧め。
-    error_print = True
+        # --- public members ---
+        
+        # 通信内容をprintで表示する(デバッグ用)
+        self.debug_print = False
 
-    think_result = None # UsiThinkResult
+        # エンジン側から"Error"が含まれている文字列が返ってきたら、それをprintで表示する。
+        # これはTrueにしておくのがお勧め。
+        self.error_print = True
 
-    # --- readonly members ---
-    # (外部からこれらの変数は書き換えないでください)
+        self.think_result = None # UsiThinkResult
 
-    # エンジンの格納フォルダ
-    # Connect()を呼び出したときに代入される。(readonly)
-    engine_path = None
-    engine_fullpath = None
+        # --- readonly members ---
+        # (外部からこれらの変数は書き換えないでください)
 
-    # エンジンとのやりとりの状態を表現する。(readonly)
-    # UsiEngineState型
-    engine_state = None
-    
-    # connect()のあと、エンジンが終了したときの状態
-    # エラーがあったとき、ここにエラーメッセージ文字列が入る
-    # エラーがなく終了したのであれば0が入る。(readonly)
-    exit_state = None
+        # エンジンの格納フォルダ
+        # Connect()を呼び出したときに代入される。(readonly)
+        self.engine_path = None
+        self.engine_fullpath = None
+
+        # エンジンとのやりとりの状態を表現する。(readonly)
+        # UsiEngineState型
+        self.engine_state = None
+        
+        # connect()のあと、エンジンが終了したときの状態
+        # エラーがあったとき、ここにエラーメッセージ文字列が入る
+        # エラーがなく終了したのであれば0が入る。(readonly)
+        self.exit_state = None
+
+        # --- private members ---
+
+        # エンジンのプロセスハンドル
+        self.__proc = None
+
+        # エンジンとやりとりするスレッド
+        self.__read_thread = None
+        self.__write_thread = None
+
+        # エンジンに設定するオプション項目。(dictで)
+        # 例 : {"Hash":"128","Threads":"8"}
+        self.__options = None
+
+        # 最後にエンジン側から受信した1行
+        self.__last_received_line = None
+
+        # エンジンにコマンドを送信するためのqueue(送信スレッドとのやりとりに用いる)
+        self.__send_queue = Queue()
+
+        # print()を呼び出すときのlock object
+        self.__lock_object = threading.Lock()
+
+        # engine_stateが変化したときのイベント用
+        self.__state_changed_cv = threading.Condition()
+
+        # このクラスのインスタンスの識別用ID。
+        # 念の為、lockしてから参照/インクリメントを行う。
+        UsiEngine.__static_lock_object.acquire()
+        self.__instance_id = UsiEngine.__static_count
+        UsiEngine.__static_count += 1
+        UsiEngine.__static_lock_object.release()
+
+
+    # --- private static members ---
+
+    # 静的メンバ変数とする。UsiEngineのインスタンスの数を記録する
+    __static_count = 0
+
+    # ↑の変数を変更するときのlock object
+    __static_lock_object = threading.Lock()
 
 
     # engineに渡すOptionを設定する。
     # 基本的にエンジンは"engine_options.txt"で設定するが、Threads、Hashなどあとから指定したいものもあるので
     # それらについては、connectの前にこのメソッドを呼び出して設定しておく。
-    # 例) usi.set_options({"Hash":"128","Threads":"8"})
-    def set_options(self,options : dict):
+    # 例) usi.set_engine_options({"Hash":"128","Threads":"8"})
+    def set_engine_options(self,options : dict):
         self.__options = options
 
 
@@ -637,7 +691,7 @@ class UsiEngine():
                     token = scanner.get_token()
                     if token == "mate":
                         is_minus = scanner.peek_token()[0] == '-'
-                        ply = scanner.get_integer()
+                        ply = int(scanner.get_integer()) # pylintが警告を出すのでintと明示しておく。
                         if not is_minus:
                             pv.eval = UsiEvalValue.mate_in_ply(ply)
                         else:
@@ -669,49 +723,9 @@ class UsiEngine():
                 self.think_result.pvs.append(None)
             self.think_result.pvs[multipv - 1] = pv
 
-    def __init__(self):
-        # instance idを設定しておく。
-        # 念の為、lockしてから参照/インクリメントを行う。
-        self.__lock_object.acquire()
-        self.__instance_id = UsiEngine.__static_count
-        UsiEngine.__static_count += 1
-        self.__lock_object.release()
-
     # デストラクタで通信の切断を行う。
     def __del__(self):
         self.disconnect()
-
-
-    # === private members ===
-
-    # エンジンのプロセスハンドル
-    __proc = None
-
-    # エンジンとやりとりするスレッド
-    __read_thread = None
-    __write_thread = None
-
-    # エンジンに設定するオプション項目。(dictで)
-    # 例 : {"Hash":"128","Threads":"8"}
-    __options = None
-
-    # 最後にエンジン側から受信した1行
-    __last_received_line = None
-
-    # エンジンにコマンドを送信するためのqueue(送信スレッドとのやりとりに用いる)
-    __send_queue = Queue()
-
-    # print()を呼び出すときのlock object
-    __lock_object = threading.Lock()
-
-    # engine_stateが変化したときのイベント用
-    __state_changed_cv = threading.Condition()
-
-    # このクラスのインスタンスの識別用ID。
-    __instance_id = 0
-
-    # 静的メンバ変数とする。UsiEngineのインスタンスの数を記録する
-    __static_count = 0
 
 
 # 手番を表現するEnum
@@ -748,7 +762,7 @@ class GameResult(IntEnum):
 
     # 1P側が勝利したのか？
     # flip_turn : AyaneruServer.flip_turnを渡す
-    def is_1p_win(self,flip_turn:bool) -> bool:
+    def is_player1_win(self,flip_turn:bool) -> bool:
         # ""== True"とかクソダサいけど、対称性があって綺麗なのでこう書いておく。
         return (self == GameResult.BLACK_WIN and flip_turn == False)\
             or (self == GameResult.WHITE_WIN and flip_turn ==  True)
@@ -757,32 +771,62 @@ class GameResult(IntEnum):
 # 1対1での対局を管理してくれる補助クラス
 class AyaneruServer:
 
-    # 引き分けとなる手数(これはユーザー側で変更して良い)
-    moves_to_draw = 320
+    def __init__(self):
 
-    # 先後プレイヤーを入れ替える機能。
-    # self.engine(Turn)でエンジンを取得するときに利いてくる。
-    # False : 1P = 先手 , 2P = 後手
-    # True  : 1P = 後手 , 2P = 先手
-    flip_turn = False
+        # --- public members ---
 
-    # --- read only members
+        # 1P側、2P側のエンジンを生成して代入する。
+        self.engines = [UsiEngine(),UsiEngine()]
 
-    # 現在の手番側
-    side_to_move = Turn.BLACK
+        # デフォルト、0.1秒対局
+        self.set_time_setting("byoyomi 100")
 
-    # 現在の局面のsfen("startpos moves ..."や、"sfen ... move ..."の形)
-    sfen = "startpos"
+        # 引き分けとなる手数(これはユーザー側で変更して良い)
+        self.moves_to_draw = 320
 
-    # 初期局面からの手数
-    game_ply = 1
+        # 先後プレイヤーを入れ替える機能。
+        # self.engine(Turn)でエンジンを取得するときに利いてくる。
+        # False : 1P = 先手 , 2P = 後手
+        # True  : 1P = 後手 , 2P = 先手
+        self.flip_turn = False
 
-    # 現在のゲーム状態
-    # ゲームが終了したら、game_result.is_gameover() == Trueになる。
-    game_result = GameResult.INIT
+        # これをgame_start()呼び出し前にTrueにしておくと、エンジンの通信内容が標準出力に出力される。
+        self.debug_print = False
 
-    # エンジン2つ [1P側、2P側]
-    engines = [UsiEngine(),UsiEngine()]
+        # これをgame_start()呼び出し前にTrueにしておくと、エンジンから"Error xxx"と送られてきたときにその内容が標準出力に出力される。
+        self.error_print = False
+
+        # --- publc readonly members
+
+        # 現在の手番側
+        self.side_to_move = Turn.BLACK
+
+        # 現在の局面のsfen("startpos moves ..."や、"sfen ... move ..."の形)
+        self.sfen = "startpos"
+
+        # 初期局面からの手数
+        self.game_ply = 1
+
+        # 現在のゲーム状態
+        # ゲームが終了したら、game_result.is_gameover() == Trueになる。
+        self.game_result = GameResult.INIT
+
+        # --- private memebers ---
+
+        # 持ち時間残り [先手側 , 後手側] 単位はms。
+        # flip_turnの影響は受けない。
+        self.__rest_time = [0,0]
+
+        # 対局の持ち時間設定
+        # self.set_time_setting()で渡されたものをparseしたもの。
+        self.__time_setting = {}
+
+        # 対局用スレッド
+        self.__game_thread = None
+
+        # 対局用スレッドの強制停止フラグ
+        self.__stop_thread = False
+
 
     # turn手番側のエンジンを取得する
     # flip_turn == Trueのときは、先手側がengines[1]、後手側がengines[0]になるので注意。
@@ -790,6 +834,7 @@ class AyaneruServer:
         if self.flip_turn:
             turn = turn.flip()
         return self.engines[int(turn)]
+
 
     # turn手番側の持ち時間の残り。
     # __rest_timeはflip_turnの影響を受けない。
@@ -836,17 +881,13 @@ class AyaneruServer:
         self.__time_setting = time_setting
 
 
-    def __init__(self):
-        # デフォルト、0.1秒対局
-        self.set_time_setting("byoyomi 100")
-
 
     # ゲームを初期化して、対局を開始する。
     # エンジンはconnectされているものとする。
     # あとは勝手に思考する。
     # ゲームが終了するなどしたらgame_resultの値がINIT,PLAYINGから変化する。
     # そのあとself.sfenを取得すればそれが対局棋譜。
-    # start_sfen : 開始局面をsfen形式で。
+    # start_sfen : 開始局面をsfen形式で。省略すると平手の開始局面。
     # 例 : "startpos" , "startpos moves 7f7g" , "sfen ..." , "sfen ... moves xxx"など。
     def game_start(self , start_sfen : str = "startpos"):
 
@@ -857,6 +898,8 @@ class AyaneruServer:
         for engine in self.engines:
             if not engine.is_connected():
                 raise ValueError("engine is not connected.")
+            engine.debug_print = self.debug_print
+            engine.error_print = self.error_print
 
         self.side_to_move = Turn.BLACK
         
@@ -980,26 +1023,185 @@ class AyaneruServer:
     def __del__(self):
         self.terminate()
 
-    # --- private memebers ---
 
-    # 持ち時間残り [先手側 , 後手側] 単位はms。
-    # flip_turnの影響は受けない。
-    __rest_time = [0,0]
 
-    # 持ち時間設定
-    __time_setting = {}
+# 対局棋譜、付随情報つき。
+class GameKifu:
 
-    # 対局用スレッド
-    __game_thread = None
+    def __init__(self):
 
-    # 対局用スレッドの強制停止フラグ
-    __stop_thread = False
+        # --- public members ---
+
+        # "startpos moves ..."のような対局棋譜
+        self.sfen = None # str
+
+        # 1P側を後手にしたのか？
+        self.flip_turn = False
+
+        # 試合結果
+        self.game_result = None # GameResult
 
 
 # 並列自己対局のためのクラス
 class MultiAyaneruServer:
-    pass
-    # TODO : 製作中
+
+    def __init__(self):
+
+        # --- public members ---
+
+        # 開始局面の集合(このなかからランダムに1つ選ばれる)
+        self.start_sfens = ["startpos"] # List[str]
+
+        # これをinit_server()呼び出し前にTrueにしておくと、エンジンの通信内容が標準出力に出力される。
+        self.debug_print = False
+
+        # これをinit_server()呼び出し前にTrueにしておくと、エンジンから"Error xxx"と送られてきたときにその内容が標準出力に出力される。
+        self.error_print = False
+
+        # --- read only members ---
+
+        # 対局サーバー群
+        self.servers = [] # List[AyaneruServer]
+
+        # 対局棋譜
+        self.game_kifus = [] # List[GameKifu]
+
+        # 終了した試合数。
+        self.total_games = 0
+
+        # player1が勝利したゲーム数
+        self.win_player1_games = 0
+        # player2が勝利したゲーム数
+        self.win_player2_games = 0
+        
+        # 引き分けたゲーム数
+        self.draw_games = 0
+
+        # --- private members ---
+
+        # game_start()のあとこれをTrueにするとすべての対局が停止する。
+        self.__game_stop = False
+
+
+    # 対局サーバーを初期化する
+    # num = 用意する対局サーバーの数(この数だけ並列対局する)
+    def init_server(self,num : int):
+        servers = []
+        for _ in range(num):
+            server = AyaneruServer()
+            server.debug_print = self.debug_print
+            server.error_print = self.error_print
+            servers.append(server)
+        self.servers = servers
+
+    # init_serverのあと、1P側、2P側のエンジンを初期化する。
+    # player : 0なら1P側、1なら2P側
+    def init_engine(self, player : int , enginePath : str , engine_options : dict):
+        for server in self.servers:
+            engine = server.engines[player]
+            engine.set_engine_options(engine_options)
+            engine.connect(enginePath)
+
+
+    # すべてのあやねるサーバーに持ち時間設定を行う。
+    def set_time_setting(self,time_setting:str):
+        for server in self.servers:
+            server.set_time_setting(time_setting)
+
+
+    # すべての対局を開始する
+    def game_start(self):
+        self.total_games = 0
+        self.win_player1_games = 0
+        self.win_player2_games = 0
+        self.draw_games = 0
+
+        self.__game_stop = False
+
+        flip = False
+        # それぞれの対局、1個ごとに先後逆でスタートしておく。
+        for server in self.servers:
+            server.flip_turn = flip
+            flip ^= True
+            # 対局を開始する
+            self.__start_server(server)
+
+        # 対局用のスレッドを作成するのがお手軽か..
+        self.__game_thread = threading.Thread(target=self.__game_worker)
+        self.__game_thread.start()
+
+
+    # game_start()で開始したすべての対局を停止させる。
+    def game_stop(self):
+        if self.__game_thread is None:
+            raise ValueError("game thread is not running.")
+        self.__game_stop = True
+        self.__game_thread.join()
+        self.__game_thread = None
+
+
+    # 対局結果("70-3-50"みたいな1P勝利数 - 引き分け - 2P勝利数　と、その勝率から計算されるレーティング差を文字列化して返す)
+    def game_info(self) -> str:
+        win_draw_lose = "{0}-{1}-{2}".format(self.win_player1_games , self.draw_games , self.win_player2_games)
+        return win_draw_lose
+
+
+    # ゲーム対局用のスレッド
+    def __game_worker(self):       
+
+        while not self.__game_stop:
+            for server in self.servers:
+                # 対局が終了しているサーバーがあるなら次のゲームを開始する。
+                if server.game_result.is_gameover():
+                    self.__restart_server(server)
+            time.sleep(1)
+
+        # serverの解体もしておく。
+        for server in self.servers:
+            server.terminate()
+        self.servers = []
+
+
+    # 対局結果を集計して、サーバーを再開(次の対局を開始)させる。
+    def __restart_server(self,server:AyaneruServer):
+        result =  server.game_result
+
+        # 終局内容に応じて戦績を加算
+        if result.is_black_or_white_win():
+            if result.is_player1_win(server.flip_turn):
+                self.win_player1_games += 1
+            else:
+                self.win_player2_games += 1
+        else:
+            self.draw_games += 1
+        self.total_games += 1
+
+        # 棋譜を保存しておく。
+        kifu = GameKifu()
+        kifu.sfen = server.sfen
+        kifu.flip_turn = server.flip_turn
+        kifu.game_result = server.game_result
+        self.game_kifus.append(kifu)
+
+        # flip_turnを反転させておく。(1局ごとに手番を入れ替え)
+        server.flip_turn ^= True
+
+        # 終了していたので再開
+        self.__start_server(server)
+
+
+    # 対局サーバーを開始する。
+    def __start_server(self,server:AyaneruServer):
+        server.game_start()
+
+
+    # 内包しているすべてのあやねるサーバーを終了させる。
+    def terminate(self):
+        if self.__game_thread is not None:
+            self.game_stop()
+
+    def __del__(self):
+        self.terminate()
 
 
 if __name__ == "__main__":

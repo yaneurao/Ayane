@@ -26,7 +26,7 @@ def test_ayane1():
 
     # エンジンオプション自体は、基本的には"engine_options.txt"で設定する。(やねうら王のdocs/を読むべし)
     # 特定のエンジンオプションをさらに上書きで設定できる
-    usi.set_options({"Hash":"128","Threads":"4","NetworkDelay":"0","NetworkDelay2":"0"})
+    usi.set_engine_options({"Hash":"128","Threads":"4","NetworkDelay":"0","NetworkDelay2":"0"})
 
     # エンジンに接続
     # 通常の思考エンジンであるものとする。
@@ -80,7 +80,7 @@ def test_ayane5(self):
 
     server = ayane.AyaneruServer()
     for engine in server.engines:
-        engine.set_options({"Hash":"128","Threads":"1","NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"320" \
+        engine.set_engine_options({"Hash":"128","Threads":"1","NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"320" \
             , "MinimumThinkingTime":"0"})
         engine.connect("exe/YaneuraOu.exe")
 

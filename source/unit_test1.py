@@ -17,7 +17,7 @@ class TestAyane(unittest.TestCase):
 
         # エンジンオプション自体は、基本的には"engine_options.txt"で設定する。(やねうら王のdocs/を読むべし)
         # 特定のエンジンオプションをさらに上書きで設定できる
-        usi.set_options({"Hash":"128","Threads":"4","NetworkDelay":"0","NetworkDelay2":"0"})
+        usi.set_engine_options({"Hash":"128","Threads":"4","NetworkDelay":"0","NetworkDelay2":"0"})
 
         # エンジンに接続
         # 通常の思考エンジンであるものとする。
@@ -51,7 +51,7 @@ class TestAyane(unittest.TestCase):
 
         usi = ayane.UsiEngine()
         # usi.debug_print = True
-        usi.set_options({"Hash":"128","Threads":"4","NetworkDelay":"0","NetworkDelay2":"0"})
+        usi.set_engine_options({"Hash":"128","Threads":"4","NetworkDelay":"0","NetworkDelay2":"0"})
         usi.connect("exe/YaneuraOu.exe")
 
         # usi.send_position("startpos moves 7g7f")
@@ -85,7 +85,7 @@ class TestAyane(unittest.TestCase):
 
         usi = ayane.UsiEngine()
         # usi.debug_print = True
-        usi.set_options({"Hash":"128","Threads":"4","NetworkDelay":"0","NetworkDelay2":"0"})
+        usi.set_engine_options({"Hash":"128","Threads":"4","NetworkDelay":"0","NetworkDelay2":"0"})
         usi.connect("exe/YaneuraOu.exe")
 
         for sfen in sfens:
@@ -119,7 +119,7 @@ class TestAyane(unittest.TestCase):
         for _ in range(2):
             usi = ayane.UsiEngine()
         #    usi.debug_print = True
-            usi.set_options({"Hash":"128","Threads":"1","NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"256" \
+            usi.set_engine_options({"Hash":"128","Threads":"1","NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"256" \
                 , "MinimumThinkingTime":"0"})
             usi.connect("exe/YaneuraOu.exe")
             usis.append(usi)
@@ -171,7 +171,7 @@ class TestAyane(unittest.TestCase):
 
         server = ayane.AyaneruServer()
         for engine in server.engines:
-            engine.set_options({"Hash":"128","Threads":"1","NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"320" \
+            engine.set_engine_options({"Hash":"128","Threads":"1","NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"320" \
                 , "MinimumThinkingTime":"0"})
             #engine.debug_print = True
             engine.connect("exe/YaneuraOu.exe")

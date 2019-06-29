@@ -8,29 +8,44 @@ class TestAyane(unittest.TestCase):
     def test_ayane6(self):
         print("test_ayane6 : ")
 
-        server = ayane.AyaneruServer()
-        for engine in server.engines:
-            engine.set_options({"Hash":"128","Threads":"1","NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"320" \
-                , "MinimumThinkingTime":"0"})
-            engine.debug_print = True
-            engine.connect("exe/YaneuraOu.exe")
+        server = ayane.MultiAyaneruServer()
 
-        server.flip_turn = True
+        # 並列4対局
+
+        # server.debug_print = True
+        server.init_server(4)
+        options = {"Hash":"128","Threads":"1","NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"320" , "MinimumThinkingTime":"0"}
+
+        # 1P,2P側のエンジンそれぞれを設定して初期化する。
+        server.init_engine(0,"exe/YaneuraOu.exe", options)
+        server.init_engine(1,"exe/YaneuraOu.exe", options)
 
         # 持ち時間設定。
         server.set_time_setting("byoyomi 100")                 # 1手0.1秒
-        # server.set_time_setting("time 1000 inc 2000")        # 1秒 + 1手2秒
 
         # これで対局が開始する
         server.game_start()
 
-        # 対局が終了するのを待つ
-        while not server.game_result.is_gameover():
+        # 10試合終了するのを待つ
+        last_total_games = 0
+
+        # ゲーム数が増えていたら、途中結果を出力する。
+        def output_info():
+            nonlocal last_total_games , server
+            if last_total_games != server.total_games:
+                last_total_games = server.total_games
+                print(server.game_info())
+
+        while server.total_games < 10 :
+            output_info()
             time.sleep(1)
+        output_info()
+
+        server.game_stop()
 
         # 対局棋譜の出力
-        print("game sfen = " + server.sfen)
-        print("game_result = " + str(server.game_result))
+        for kifu in server.game_kifus:
+            print("game sfen = {0} , flip_turn = {1} , game_result = {2}".format(kifu.sfen , kifu.flip_turn , str(kifu.game_result)))
 
         server.terminate()
 
