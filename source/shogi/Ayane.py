@@ -6,7 +6,7 @@ from queue import Queue
 from enum import Enum
 from enum import IntEnum
 
-# unit_test.pyのほうのコードを見ると最低限の使い方は理解できるはずです。(それがサンプルを兼ねているので)
+# unit_test1.pyのほうのコードを見ると最低限の使い方は理解できるはずです。(それがサンプルを兼ねているので)
 
 # しかし、それ以上に利用しようとする場合、多少はUSIプロトコルについて理解している必要があります。
 # cf.「USIプロトコルとは」: http://shogidokoro.starfree.jp/usi.html
@@ -168,14 +168,15 @@ class UsiThinkPV():
 
 # 思考エンジンに対して送った"go"コマンドに対して思考エンジンから返ってきた情報を保持する構造体
 class UsiThinkResult():
+
     # 最善手(sfen表記文字列にて。例:"7g7f")
     # "bestmove"を受信するまではNoneが代入されている。
     # "resign"(投了) , "win"(宣言勝ち) のような文字列もありうる。
-    bestmove = None
+    bestmove = None # str
 
     # 最善手を指したあとの相手の指し手。(sfen表記文字列にて)
     # ない場合は、文字列で"none"。
-    ponder = None
+    ponder = None # str
 
     # 最善応手列
     # UsiThinkPVの配列。
@@ -208,7 +209,7 @@ class Scanner:
 
     # argsとしてstr[]を渡しておく。
     # args[index]のところからスキャンしていく。
-    def __init__(self , args : [] , index : int):
+    def __init__(self , args : [] , index : int = 0):
         self.__args = args
         self.__index = index
 
@@ -267,6 +268,7 @@ class UsiEngine():
     think_result = None # UsiThinkResult
 
     # --- readonly members ---
+    # (外部からこれらの変数は書き換えないでください)
 
     # エンジンの格納フォルダ
     # Connect()を呼び出したときに代入される。(readonly)
@@ -769,6 +771,59 @@ class AyaneruServer:
     # エンジン2つ
     engines = [UsiEngine(),UsiEngine()]
 
+    # 手番側のエンジンを取得する
+    def engine(self,turn:Turn) -> UsiEngine:
+        return self.engines[int(turn)]
+
+    # 持ち時間の残り。
+    def rest_time(self,turn:Turn)->int:
+        return self.__rest_time[int(turn)]
+
+
+    # 持ち時間設定を行う
+    # btime = 先手持ち時間[ms]
+    # wtime = 後手持ち時間[ms]
+    # その他はUSIプロトコルのgoコマンドに倣う。
+    # ただし、bbyoyomi , wbyoyomi , binctime , winctimeのように先後個別に設定できる。
+    # 例 : "byoyomi 100" : 1手0.1秒
+    # 例 : "time 900000" : 15分
+    # 例 : "btime 900000 wtime 900000 byoyomi 5000" : 15分 + 秒読み5秒
+    # 例 : "btime 10000 wtime 10000 inc 5000" : 10秒 + 1手ごとに5秒加算
+    # 例 : "btime 10000 wtime 10000 binc 5000 winc 1000" : 10秒 + 先手1手ごとに5秒、後手1手ごとに1秒加算
+    def set_time_setting(self,setting:str):
+        scanner = Scanner(setting.split())
+        tokens = ["time","btime","wtime","byoyomi","bbyoyomi","wbyoyomi","inc","binc","winc"]
+        time_setting = {}
+
+        while not scanner.is_eof():
+            token = scanner.get_token()
+            param = scanner.get_token()
+            # 使えない指定がないかのチェック
+            if not token in tokens:
+                raise ValueError("invalid token : " + token)
+            int_param = int(param)
+            time_setting[token] = int_param
+
+        # "byoyomi"は"bbyoyomi","wbyoyomi"に敷衍する。("time" , "inc"も同様)
+        for s in ["time","byoyomi","inc"]:
+            if s in time_setting:
+                inc_param = time_setting[s]
+                time_setting['b' + s] = inc_param
+                time_setting['w' + s] = inc_param
+
+        # 0になっている項目があるとややこしいので0埋めしておく。
+        for token in tokens:
+            if not token in time_setting:
+                time_setting[token] = 0
+
+        self.__time_setting = time_setting
+
+
+    def __init__(self):
+        # デフォルト、0.1秒対局
+        self.set_time_setting("byoyomi 100")
+
+
     # ゲームを初期化して、対局を開始する。
     # エンジンはconnectされているものとする。
     # あとは勝手に思考する。
@@ -791,17 +846,54 @@ class AyaneruServer:
         for engine in self.engines:
             engine.send_command("usinewgame") # いまから対局はじまるよー
 
+        # 開始時 持ち時間
+        self.__rest_time = [self.__time_setting["btime"] , self.__time_setting["wtime"]]
+
         # 対局用のスレッドを作成するのがお手軽か..
         self.__game_thread = threading.Thread(target=self.__game_worker)
         self.__game_thread.start()
 
     # 対局スレッド
     def __game_worker(self):
+
         while self.game_ply < self.moves_to_draw:
             engine = self.engine(self.side_to_move)
             engine.usi_position(self.sfen)
-            engine.usi_go_and_wait_bestmove("btime 0 wtime 0 byoyomi 100")
-            # TODO : ここの持ち時間等、事前に設定できるようにする。
+
+            byoyomi_str = "bbyoyomi" if self.side_to_move == Turn.BLACK else "wbyoyomi"
+            inctime_str = "binc" if self.side_to_move == Turn.BLACK else "winc"
+            inctime = self.__time_setting[inctime_str]
+
+            # inctimeが指定されていないならbyoymiを付与
+            if inctime == 0:
+                byoyomi_or_inctime_str = "byoyomi {0}".format(self.__time_setting[byoyomi_str])
+            else:
+                byoyomi_or_inctime_str = "binc {0} winc {1}".\
+                    format(self.__time_setting["binc"] , self.__time_setting["winc"])
+            
+            start_time = time.time()
+            engine.usi_go_and_wait_bestmove("btime {0} wtime {1} {2}".format(\
+                self.rest_time(Turn.BLACK), self.rest_time(Turn.WHITE) , byoyomi_or_inctime_str))
+            end_time = time.time()
+
+            # 使用した時間を1秒単位で繰り上げて、残り時間から減算
+            # プロセス間の通信遅延を考慮して300[ms]ほど引いておく。(秒読みの場合、どうせ使い切るので問題ないはず..)
+            elapsed_time = (end_time - start_time) - 0.3 # [ms]に変換
+            elapsed_time = int(elapsed_time + 0.999) * 1000
+            if elapsed_time < 0:
+                elapsed_time = 0
+            int_turn = int(self.side_to_move)
+            self.__rest_time[int_turn] -= int(elapsed_time)
+            if self.__rest_time[int_turn] < -2000: # -2秒より減っていたら。0.1秒対局とかもあるので1秒繰り上げで引いていくとおかしくなる。
+                self.game_result = GameResult(self.side_to_move.flip())
+                self.__game_over()
+                # 本来、自己対局では時間切れになってはならない。(計測が不確かになる)
+                # 警告を表示しておく。
+                print("WARNING : player timeup") 
+                return
+            # 残り時間がわずかにマイナスになっていたら0に戻しておく。
+            if self.__rest_time[int_turn] < 0:
+                self.__rest_time[int_turn] = 0
 
             bestmove = engine.think_result.bestmove
             if bestmove == "resign":
@@ -809,11 +901,20 @@ class AyaneruServer:
                 self.game_result = GameResult(self.side_to_move.flip())
                 self.__game_over()
                 return 
+
             self.sfen = self.sfen + " " + bestmove
             self.game_ply += 1
+
+            # inctime分、時間を加算
+            self.__rest_time[int(self.side_to_move)] += inctime
             self.side_to_move = self.side_to_move.flip()
             # 千日手引き分けを処理しないといけないが、ここで判定するのは難しいので
             # max_movesで抜けることを期待。
+
+            if self.__stop_thread:
+                # 強制停止なので試合内容は保証されない
+                self.game_result = GameResult.ILLEGAL_MOVE
+                return 
 
         # 引き分けで終了
         self.game_result = GameResult.MAX_MOVES
@@ -834,12 +935,11 @@ class AyaneruServer:
             # それ以外サポートしてない
             raise ValueError("illegal result")
 
-    # 手番側のエンジンを取得する
-    def engine(self,turn:Turn) -> UsiEngine:
-        return self.engines[int(turn)]
 
-    # エンジンを終了させる
+    # エンジンを終了させるなどの後処理を行う
     def terminate(self):
+        self.__stop_thread = True
+        self.__game_thread.join()
         for engine in self.engines:
             engine.disconnect()
 
@@ -849,8 +949,17 @@ class AyaneruServer:
 
     # --- private memebers ---
 
+    # 持ち時間残り
+    __rest_time = [0,0]
+
+    # 持ち時間設定
+    __time_setting = {}
+
     # 対局用スレッド
     __game_thread = None
+
+    # 対局用スレッドの強制停止フラグ
+    __stop_thread = False
 
 
 

@@ -116,7 +116,7 @@ class TestAyane(unittest.TestCase):
         # エンジン二つ
         usis = []
 
-        for __i in range(2):
+        for _ in range(2):
             usi = ayane.UsiEngine()
         #    usi.debug_print = True
             usi.set_options({"Hash":"128","Threads":"1","NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"256" \
