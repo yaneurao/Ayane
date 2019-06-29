@@ -15,6 +15,17 @@ from enum import IntEnum
 # https://github.com/gunyarakun/python-shogi
 
 
+
+# 手番を表現するEnum
+class Turn(IntEnum) :
+    BLACK = 0   # 先手
+    WHITE = 1   # 後手
+
+    # 反転させた手番を返す
+    def flip(self) -> int: # Turn:
+        return Turn(int(self) ^ 1)
+
+
 # UsiEngineクラスのなかで用いるエンジンの状態を表現するenum
 class UsiEngineState(Enum):
     WaitConnecting  = 1     # 起動待ち
@@ -117,31 +128,31 @@ class UsiThinkPV():
         #  "rep_lose" : 王手を含む千日手(反則負け) // これ実際には出力されないはずだが…。
         #  読み筋が宣言勝ちのときは読み筋の末尾に "win"
         #  投了の局面で呼び出されたとき "resign"
-        pv = None # str
+        self.pv = None # str
 
         # 評価値(整数値)
-        eval = None # UsiEvalValue
+        self.eval = None # UsiEvalValue
 
         # 読みの深さ
-        depth = None # int
+        self.depth = None # int
 
         # 読みの選択深さ
-        seldepth = None # int
+        self.seldepth = None # int
 
         # 読みのノード数
-        nodes = None # int
+        self.nodes = None # int
 
         # "go"を送信してからの経過時刻。[ms]
-        time = None # int
+        self.time = None # int
 
         # hash使用率 1000分率
-        hashfull = None # int
+        self.hashfull = None # int
 
         # nps
-        nps = None # int
+        self.nps = None # int
 
         # bound
-        bound = None # UsiBound
+        self.bound = None # UsiBound
 
 
     # 表示できる文字列化して返す。(主にデバッグ用)
@@ -444,19 +455,19 @@ class UsiEngine():
                 self.__state_changed_cv.wait()
 
 
-    # position_command()で設定した局面に対する合法手の指し手の集合を得る。
+    # [SYNC] usi_position()で設定した局面に対する合法手の指し手の集合を得る。
     # USIプロトコルでの表記文字列で返ってくる。
     # すぐに返ってくるはずなのでブロッキングメソッド
     # "moves"は、やねうら王でしか使えないUSI拡張コマンド
     def get_moves(self) -> str:
-        self.wait_for_state(UsiEngineState.WaitCommand)
-        self.__last_received_line = None
-        with self.__state_changed_cv:
-            self.send_command("moves")
+        return self.__send_command_and_getline("moves")
 
-            # エンジン側から一行受信するまでblockingして待機
-            self.__state_changed_cv.wait_for(lambda : self.__last_received_line is not None)
-            return self.__last_received_line
+
+    # [SYNC] usi_position()で設定した局面に対する手番を得る。
+    # "side"は、やねうら王でしか使えないUSI拡張コマンド
+    def get_side_to_move(self) -> Turn:
+        line = self.__send_command_and_getline("moves")
+        return Turn.BLACK if line == "black" else Turn.WHITE
 
 
     # --- エンジンに対して送信するコマンド ---
@@ -508,6 +519,18 @@ class UsiEngine():
 
 
     # --- エンジンに対するコマンド、ここまで ---
+
+
+    # [SYNC] エンジンに対して1行送って、すぐに1行返ってくるので、それを待って、この関数の返し値として返す。
+    def __send_command_and_getline(self,command:str) -> str:
+        self.wait_for_state(UsiEngineState.WaitCommand)
+        self.__last_received_line = None
+        with self.__state_changed_cv:
+            self.send_command(command)
+
+            # エンジン側から一行受信するまでblockingして待機
+            self.__state_changed_cv.wait_for(lambda : self.__last_received_line is not None)
+            return self.__last_received_line
 
 
     # エンジンとのやりとりを行うスレッド(read方向)
@@ -728,16 +751,6 @@ class UsiEngine():
         self.disconnect()
 
 
-# 手番を表現するEnum
-class Turn(IntEnum) :
-    BLACK = 0   # 先手
-    WHITE = 1   # 後手
-
-    # 反転させた手番を返す
-    def flip(self) -> int: # Turn:
-        return Turn(int(self) ^ 1)
-
-
 # ゲームの終局状態を示す
 class GameResult(IntEnum):
     BLACK_WIN    = 0  # 先手勝ち
@@ -776,6 +789,9 @@ class AyaneruServer:
         # --- public members ---
 
         # 1P側、2P側のエンジンを生成して代入する。
+        # デフォルトでは先手が1P側、後手が2P側になる。
+        # self.flip_turn == Trueのときはこれが反転する。
+        # ※　与えた開始局面のsfenが先手番から始まるとは限らないので注意。
         self.engines = [UsiEngine(),UsiEngine()]
 
         # デフォルト、0.1秒対局
@@ -900,16 +916,17 @@ class AyaneruServer:
                 raise ValueError("engine is not connected.")
             engine.debug_print = self.debug_print
             engine.error_print = self.error_print
-
-        self.side_to_move = Turn.BLACK
         
         # 局面の設定
         self.sfen = start_sfen
         if "moves" not in self.sfen:
             self.sfen += " moves"
 
-        self.game_result = GameResult.PLAYING
+        # 1P側のエンジンを使って、現局面の手番を得る。
+        self.side_to_move = self.engines[0].get_side_to_move()
         self.game_ply = 1
+        self.game_result = GameResult.PLAYING
+
         for engine in self.engines:
             engine.send_command("usinewgame") # いまから対局はじまるよー
 
@@ -1058,7 +1075,7 @@ class MultiAyaneruServer:
         # これをinit_server()呼び出し前にTrueにしておくと、エンジンから"Error xxx"と送られてきたときにその内容が標準出力に出力される。
         self.error_print = False
 
-        # --- read only members ---
+        # --- public readonly members ---
 
         # 対局サーバー群
         self.servers = [] # List[AyaneruServer]

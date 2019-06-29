@@ -32,6 +32,10 @@ class TestAyane(unittest.TestCase):
         moves = usi.get_moves()
         self.assertEqual(moves , "1c1d 2c2d 3c3d 4c4d 5c5d 6c6d 7c7d 8c8d 9c9d 1a1b 9a9b 3a3b 3a4b 7a6b 7a7b 8b3b 8b4b 8b5b 8b6b 8b7b 8b9b 4a3b 4a4b 4a5b 5a4b 5a5b 5a6b 6a5b 6a6b 6a7b")
 
+        # 現在の局面の手番を得る
+        turn = usi.get_side_to_move()
+        self.assertEqual(turn , ayane.Turn.WHITE)
+
         # multipv 4で探索させてみる
         # 2秒思考して待機させる。
         usi.send_command("multipv 4")
