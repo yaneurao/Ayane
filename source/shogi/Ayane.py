@@ -3,6 +3,7 @@ import subprocess
 import time
 import os
 import math
+import random
 from queue import Queue
 from enum import Enum
 from enum import IntEnum
@@ -930,11 +931,25 @@ class AyaneruServer:
     # そのあとself.sfenを取得すればそれが対局棋譜。
     # start_sfen : 開始局面をsfen形式で。省略すると平手の開始局面。
     # 例 : "startpos" , "startpos moves 7f7g" , "sfen ..." , "sfen ... moves ..."など。
-    def game_start(self , start_sfen : str = "startpos"):
+    # start_gameply : start_sfenの開始手数。0を指定すると末尾の局面から。
+    def game_start(self , start_sfen : str = "startpos",start_gameply : int = 0):
 
         # ゲーム対局中ではないか？これは前提条件の違反
         if self.game_result == GameResult.PLAYING:
             raise ValueError("must be gameover.")
+
+        # 局面の設定
+        sfen = start_sfen
+        if "moves" not in sfen:
+            sfen += " moves"
+
+        # 開始手数。0なら無視(末尾の局面からなので)
+        if start_gameply != 0:
+            sp = sfen.split()
+            index = min( sp.index( "moves") + start_gameply - 1 , len(sp) - 1)
+            sfen = ' '.join(sp[0:index + 1])
+
+        self.sfen = sfen
 
         for engine in self.engines:
             if not engine.is_connected():
@@ -942,11 +957,6 @@ class AyaneruServer:
             engine.debug_print = self.debug_print
             engine.error_print = self.error_print
         
-        # 局面の設定
-        self.sfen = start_sfen
-        if "moves" not in self.sfen:
-            self.sfen += " moves"
-
         # 1P側のエンジンを使って、現局面の手番を得る。
         self.side_to_move = self.engines[0].get_side_to_move()
         self.game_ply = 1
@@ -1202,8 +1212,12 @@ class MultiAyaneruServer:
 
         # --- public members ---
 
-        # 開始局面の集合(このなかからランダムに1つ選ばれる)
+        # 定跡(= 開始局面の集合 , このなかからランダムに1つ選ばれる)
         self.start_sfens = ["startpos"] # List[str]
+
+        # 定跡の開始手数。この手数の局面から開始する。
+        # 0を指定すると末尾の局面から。
+        self.start_gameply = 1
 
         # 1ゲームごとに手番を入れ替える。
         self.flip_turn_every_game = True
@@ -1292,7 +1306,8 @@ class MultiAyaneruServer:
         # それぞれの対局、1個ごとに先後逆でスタートしておく。
         for server in self.servers:
             server.flip_turn = flip
-            flip ^= True
+            if self.flip_turn_every_game:
+                flip ^= True
             # 対局を開始する
             self.__start_server(server)
 
@@ -1364,6 +1379,13 @@ class MultiAyaneruServer:
         self.game_kifus.append(kifu)
 
 
+    # 対局サーバーを開始する。
+    def __start_server(self,server:AyaneruServer):
+        # sfenをstart_sfensのなかから一つランダムに取得
+        sfen = self.start_sfens[random.randint(0,len(self.start_sfens)-1)]
+        server.game_start(sfen , self.start_gameply)
+
+
     # 対局結果を集計して、サーバーを再開(次の対局を開始)させる。
     def __restart_server(self,server:AyaneruServer):
         # 対局結果の集計
@@ -1375,11 +1397,6 @@ class MultiAyaneruServer:
 
         # 終了していたので再開
         self.__start_server(server)
-
-
-    # 対局サーバーを開始する。
-    def __start_server(self,server:AyaneruServer):
-        server.game_start()
 
 
     # 内包しているすべてのあやねるサーバーを終了させる。

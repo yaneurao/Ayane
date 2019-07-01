@@ -39,6 +39,19 @@
 # --thread1 , thread2
 # エンジン1P側のスレッド数、エンジン2P側のスレッド数
 
+# --eval1 , eval2
+# エンジン1P側のevalフォルダ、エンジン2P側のevalフォルダ
+
+# --flip_turn
+# 1局ごとに先後入れ替えるのか(デフォルト:False)
+
+# --book_file
+# 定跡ファイル("startpos moves ..."や"sfen ... moves ..."のような書式で書かれているものとする)
+
+# --start_gameply
+# 定跡ファイルの開始手数。0を指定すると末尾の局面から開始。1を指定すると初期局面。
+
+import os
 import time
 import argparse
 import shogi.Ayane as ayane
@@ -73,10 +86,43 @@ if __name__ == "__main__":
     parser.add_argument("--thread1",type=int,default=2,help="number of engine1 thread")
     parser.add_argument("--thread2",type=int,default=2,help="number of engine2 thread")
 
+    # engine folder
+    parser.add_argument("--eval1",type=str,default="eval",help="engine1 eval")
+    parser.add_argument("--eval2",type=str,default="eval",help="engine2 eval2")
+
+    # flip_turn
+    parser.add_argument("--flip_turn",type=bool,default=True,help="flip turn every game")
+
+    # book_file
+    parser.add_argument("--book_file",type=str,default=None,help="book filepath")
+
+    # start_gameply
+    parser.add_argument("--start_gameply",type=int,default=24,help="start game ply in the book")
+
     args = parser.parse_args()
 
     # --- コマンドラインのparseここまで ---
 
+    home = args.home
+
+    print("home           : {0}".format(home))
+    print("engine1        : {0}".format(args.engine1))
+    print("engine2        : {0}".format(args.engine2))
+    print("eval1          : {0}".format(args.eval1))
+    print("eval2          : {0}".format(args.eval2))
+    print("hash1          : {0}".format(args.hash1))
+    print("hash2          : {0}".format(args.hash2))
+    print("loop           : {0}".format(args.loop))
+    print("cores          : {0}".format(args.cores))
+    print("time           : {0}".format(args.time))
+    print("flip_turn      : {0}".format(args.flip_turn))
+    print("book file      : {0}".format(args.book_file))
+    print("start_gameply  : {0}".format(args.start_gameply))
+
+    engine1 = os.path.join(home,args.engine1)
+    engine2 = os.path.join(home,args.engine2)
+    eval1 = os.path.join(home,args.eval1)
+    eval2 = os.path.join(home,args.eval2)
 
     # マルチあやねるサーバーをそのまま用いる
     server = ayane.MultiAyaneruServer()
@@ -95,17 +141,33 @@ if __name__ == "__main__":
     # あやねるサーバーを起動
     server.init_server(game_server_num)
 
-    # 共通設定
+    # エンジンオプション
     options_common = {"NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"320","MinimumThinkingTime":"0","BookFile":"no_book"}
-    options1p = {"Hash":str(args.hash1),"Threads":str(args.thread1)}
-    options2p = {"Hash":str(args.hash2),"Threads":str(args.thread2)}
+    options1p = {"Hash":str(args.hash1),"Threads":str(args.thread1),"EvalDir":eval1}
+    options2p = {"Hash":str(args.hash2),"Threads":str(args.thread2),"EvalDir":eval2}
 
     # 1P,2P側のエンジンそれぞれを設定して初期化する。
-    server.init_engine(0,"exe/YaneuraOu.exe", {}.update(**options_common , **options1p))
-    server.init_engine(1,"exe/YaneuraOu.exe", {}.update(**options_common , **options2p))
+    server.init_engine(0,engine1, {}.update(**options_common , **options1p))
+    server.init_engine(1,engine2, {}.update(**options_common , **options2p))
 
     # 持ち時間設定。
     server.set_time_setting(args.time)
+
+    # flip_turnを反映させる
+    server.flip_turn_every_game = args.flip_turn
+
+    # 定跡
+
+    # テスト用の定跡ファイル
+    # args.book_file = "book/records2016_10818.sfen"
+    if args.book_file is None:
+        start_sfens = ["startpos"]
+    else:
+        book_filepath = os.path.join(home,args.book_file)
+        with open(book_filepath) as f:
+            start_sfens = f.readlines()
+    server.start_sfens = start_sfens
+    server.start_gameply = args.start_gameply
 
     # 対局スレッド数、秒読み設定などを短縮文字列化する。
     if args.thread1 == args.thread2:
