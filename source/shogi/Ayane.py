@@ -1243,6 +1243,9 @@ class MultiAyaneruServer:
         # game_start()のあとこれをTrueにするとすべての対局が停止する。
         self.__game_stop = False
 
+        # 対局監視用のスレッド
+        self.__game_thread = None
+
 
     # 対局サーバーを初期化する
     # num = 用意する対局サーバーの数(この数だけ並列対局する)
