@@ -1,3 +1,16 @@
+TODO : マルチあやねるサーバー、開始局面をstart_sfensから選ぶ
+TODO : マルチあやねるサーバー呼び出しスクリプト作成(あやねるコロシアム)
+
+
+■　2019/07/01
+
+
+- あやねるサーバー、time_settingの表記変更。1P,2Pに分離。
+- マルチあやねるサーバーにself.flip_turn_every_game , win_black_gamesなど追加。
+- EloRatingクラス追加。
+- マルチあやねるサーバーにレーティング計算導入
+- test_ayane6、unit_test1.pyに移動。
+
 
 ■　2019/06/30
 

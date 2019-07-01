@@ -2,6 +2,7 @@ import threading
 import subprocess
 import time
 import os
+import math
 from queue import Queue
 from enum import Enum
 from enum import IntEnum
@@ -760,6 +761,12 @@ class GameResult(IntEnum):
     ILLEGAL_MOVE = 4  # 反則の指し手が出た
     INIT         = 5  # ゲーム開始前
     PLAYING      = 6  # まだゲーム中
+    STOP_GAME    = 7  # 強制stopさせたので結果は保証されず
+
+    # win_turn側が勝利したときの定数を返す
+    @staticmethod
+    def from_win_turn(win_turn:Turn)->int: # GameResult(IntEnum)
+        return GameResult.BLACK_WIN if win_turn == Turn.BLACK else GameResult.WHITE_WIN
 
     # ゲームは引き分けであるのか？
     def is_draw(self)->bool:
@@ -829,8 +836,7 @@ class AyaneruServer:
 
         # --- private memebers ---
 
-        # 持ち時間残り [先手側 , 後手側] 単位はms。
-        # flip_turnの影響は受けない。
+        # 持ち時間残り [1P側 , 2P側] 単位はms。
         self.__rest_time = [0,0]
 
         # 対局の持ち時間設定
@@ -844,33 +850,52 @@ class AyaneruServer:
         self.__stop_thread = False
 
 
+    # turn側のplayer番号を取得する。(flip_turnを考慮する。)
+    # 返し値
+    # 0 : 1P側
+    # 1 : 2P側
+    def player_number(self,turn:Turn) -> int:
+        if self.flip_turn:
+            turn = turn.flip()
+        return int(turn)
+
+    # turn側のplayer名を取得する。(flip_turnを考慮する)
+    # "1p" , "2p"という文字列が返る。
+    def player_str(self,turn:Turn) -> str:
+        return str(self.player_number(turn)+1) + "p"
+
+
     # turn手番側のエンジンを取得する
     # flip_turn == Trueのときは、先手側がengines[1]、後手側がengines[0]になるので注意。
     def engine(self,turn:Turn) -> UsiEngine:
-        if self.flip_turn:
-            turn = turn.flip()
-        return self.engines[int(turn)]
-
+        return self.engines[self.player_number(turn)]
+        
 
     # turn手番側の持ち時間の残り。
-    # __rest_timeはflip_turnの影響を受けない。
+    # self.__rest_timeはflip_turnの影響を受ける。
     def rest_time(self,turn:Turn)->int:
-        return self.__rest_time[int(turn)]
+        return self.__rest_time[self.player_number(turn)]
 
 
     # 持ち時間設定を行う
-    # btime = 先手持ち時間[ms]
-    # wtime = 後手持ち時間[ms]
-    # その他はUSIプロトコルのgoコマンドに倣う。
-    # ただし、bbyoyomi , wbyoyomi , binctime , winctimeのように先後個別に設定できる。
+    # time = 先後の持ち時間[ms]
+    # time1p = 1p側 持ち時間[ms](1p側だけ個別に設定したいとき)
+    # time2p = 2p側 持ち時間[ms](2p側だけ個別に設定したいとき)
+    # byoyomi = 秒読み[ms]
+    # byoyomi1p = 1p側秒読み[ms]
+    # byoyomi2p = 2p側秒読み[ms]
+    # inc = 1手ごとの加算[ms]
+    # inc1p = 1p側のinc[ms]
+    # inc2p = 2p側のinc[ms]
+    # 
     # 例 : "byoyomi 100" : 1手0.1秒
     # 例 : "time 900000" : 15分
-    # 例 : "btime 900000 wtime 900000 byoyomi 5000" : 15分 + 秒読み5秒
-    # 例 : "btime 10000 wtime 10000 inc 5000" : 10秒 + 1手ごとに5秒加算
-    # 例 : "btime 10000 wtime 10000 binc 5000 winc 1000" : 10秒 + 先手1手ごとに5秒、後手1手ごとに1秒加算
+    # 例 : "time1p 900000 time2p 900000 byoyomi 5000" : 15分 + 秒読み5秒
+    # 例 : "time1p 10000 time2p 10000 inc 5000" : 10秒 + 1手ごとに5秒加算
+    # 例 : "time1p 10000 time2p 10000 inc1p 5000 inc2p 1000" : 10秒 + 先手1手ごとに5秒、後手1手ごとに1秒加算
     def set_time_setting(self,setting:str):
         scanner = Scanner(setting.split())
-        tokens = ["time","btime","wtime","byoyomi","bbyoyomi","wbyoyomi","inc","binc","winc"]
+        tokens = ["time","time1p","time2p","byoyomi","byoyomi1p","byoyomi2p","inc","inc1p","inc2p"]
         time_setting = {}
 
         while not scanner.is_eof():
@@ -882,12 +907,12 @@ class AyaneruServer:
             int_param = int(param)
             time_setting[token] = int_param
 
-        # "byoyomi"は"bbyoyomi","wbyoyomi"に敷衍する。("time" , "inc"も同様)
+        # "byoyomi"は"byoyomi1p","byoyomi2p"に敷衍する。("time" , "inc"も同様)
         for s in ["time","byoyomi","inc"]:
             if s in time_setting:
                 inc_param = time_setting[s]
-                time_setting['b' + s] = inc_param
-                time_setting['w' + s] = inc_param
+                time_setting[s + "1p"] = inc_param
+                time_setting[s + "2p"] = inc_param
 
         # 0になっている項目があるとややこしいので0埋めしておく。
         for token in tokens:
@@ -904,7 +929,7 @@ class AyaneruServer:
     # ゲームが終了するなどしたらgame_resultの値がINIT,PLAYINGから変化する。
     # そのあとself.sfenを取得すればそれが対局棋譜。
     # start_sfen : 開始局面をsfen形式で。省略すると平手の開始局面。
-    # 例 : "startpos" , "startpos moves 7f7g" , "sfen ..." , "sfen ... moves xxx"など。
+    # 例 : "startpos" , "startpos moves 7f7g" , "sfen ..." , "sfen ... moves ..."など。
     def game_start(self , start_sfen : str = "startpos"):
 
         # ゲーム対局中ではないか？これは前提条件の違反
@@ -931,7 +956,7 @@ class AyaneruServer:
             engine.send_command("usinewgame") # いまから対局はじまるよー
 
         # 開始時 持ち時間
-        self.__rest_time = [self.__time_setting["btime"] , self.__time_setting["wtime"]]
+        self.__rest_time = [self.__time_setting["time1p"] , self.__time_setting["time2p"]]
 
         # 対局用のスレッドを作成するのがお手軽か..
         self.__game_thread = threading.Thread(target=self.__game_worker)
@@ -946,8 +971,9 @@ class AyaneruServer:
             engine = self.engine(self.side_to_move)
             engine.usi_position(self.sfen)
 
-            byoyomi_str = "bbyoyomi" if self.side_to_move == Turn.BLACK else "wbyoyomi"
-            inctime_str = "binc" if self.side_to_move == Turn.BLACK else "winc"
+            # 現在の手番側["1p" or "2p]の時間設定
+            byoyomi_str = "byoyomi" + self.player_str(self.side_to_move)
+            inctime_str = "inc"     + self.player_str(self.side_to_move)
             inctime = self.__time_setting[inctime_str]
 
             # inctimeが指定されていないならbyoymiを付与
@@ -955,7 +981,7 @@ class AyaneruServer:
                 byoyomi_or_inctime_str = "byoyomi {0}".format(self.__time_setting[byoyomi_str])
             else:
                 byoyomi_or_inctime_str = "binc {0} winc {1}".\
-                    format(self.__time_setting["binc"] , self.__time_setting["winc"])
+                    format(self.__time_setting["inc"+self.player_str(Turn.BLACK)], self.__time_setting["inc"+self.player_str(Turn.WHITE)])
             
             start_time = time.time()
             engine.usi_go_and_wait_bestmove("btime {0} wtime {1} {2}".format(\
@@ -969,14 +995,16 @@ class AyaneruServer:
             elapsed_time = int(elapsed_time + 0.999) * 1000
             if elapsed_time < 0:
                 elapsed_time = 0
-            int_turn = int(self.side_to_move)
+
+            # 現在の手番を数値化したもの。1P側=0 , 2P側=1
+            int_turn = self.player_number(self.side_to_move)
             self.__rest_time[int_turn] -= int(elapsed_time)
             if self.__rest_time[int_turn] < -2000: # -2秒より減っていたら。0.1秒対局とかもあるので1秒繰り上げで引いていくとおかしくなる。
-                self.game_result = GameResult(self.side_to_move.flip())
+                self.game_result = GameResult.from_win_turn(self.side_to_move.flip())
                 self.__game_over()
                 # 本来、自己対局では時間切れになってはならない。(計測が不確かになる)
                 # 警告を表示しておく。
-                print("WARNING : player timeup") 
+                print("Error! : player timeup") 
                 return
             # 残り時間がわずかにマイナスになっていたら0に戻しておく。
             if self.__rest_time[int_turn] < 0:
@@ -985,13 +1013,13 @@ class AyaneruServer:
             bestmove = engine.think_result.bestmove
             if bestmove == "resign":
                 # 相手番の勝利
-                self.game_result = GameResult(self.side_to_move.flip())
+                self.game_result = GameResult.from_win_turn(self.side_to_move.flip())
                 self.__game_over()
                 return 
             if bestmove == "win":
                 # 宣言勝ち(手番側の勝ち)
                 # 局面はノーチェックだが、まあエンジン側がバグっていなければこれでいいだろう)
-                self.game_result = GameResult(self.side_to_move)
+                self.game_result = GameResult.from_win_turn(self.side_to_move)
                 self.__game_over()
                 return
 
@@ -999,14 +1027,14 @@ class AyaneruServer:
             self.game_ply += 1
 
             # inctime分、時間を加算
-            self.__rest_time[int(self.side_to_move)] += inctime
+            self.__rest_time[int_turn] += inctime
             self.side_to_move = self.side_to_move.flip()
             # 千日手引き分けを処理しないといけないが、ここで判定するのは難しいので
             # max_movesで抜けることを期待。
 
             if self.__stop_thread:
                 # 強制停止なので試合内容は保証されない
-                self.game_result = GameResult.ILLEGAL_MOVE
+                self.game_result = GameResult.STOP_GAME
                 return 
 
         # 引き分けで終了
@@ -1059,6 +1087,114 @@ class GameKifu:
         self.game_result = None # GameResult
 
 
+class EloRating:
+    def __init__(self):
+        # --- public members ---
+        
+        # 1P側の勝利回数
+        self.player1_win = 0
+
+        # 2P側の勝利回数
+        self.player2_win = 0
+
+        # 先手側の勝利回数
+        self.black_win = 0
+
+        # 後手側の勝利回数
+        self.white_win = 0
+
+        # 引き分けの回数
+        self.draw_games = 0
+
+        # --- public readonly members ---
+
+        # 勝率1P側
+        self.win_rate = 0
+
+        # 勝率先手側,後手側
+        self.win_rate_black = 0
+        self.win_rate_white = 0
+
+        # 1P側は2P側よりどれだけratingが勝るか
+        self.rating = 0
+
+        # ratingの差の信頼下限,信頼上限
+        self.rating_lowerbound = 0
+        self.rating_upperbound = 0
+
+        # レーティング差についてユーザーに見やすい形での文字列
+        self.pretty_string = ""
+
+    # このクラスのpublic membersのところを設定して、このcalc()を呼び出すと、
+    # レーティングなどが計算されて、public readonly membersのところに反映される。
+    def calc(self):
+        # 引き分け以外の有効な試合数
+        total = float(self.player1_win + self.player2_win)
+    
+        if total != 0 :
+            # 普通の勝率
+            self.win_rate = self.player1_win / total
+            # 先手番/後手番のときの勝率内訳
+            self.win_rate_black = self.black_win / total
+            self.win_rate_white = self.white_win / total
+        else:
+            self.win_rate = 0
+            self.win_rate_black = 0
+            self.win_rate_white = 0
+        
+        if self.win_rate == 0 or self.win_rate == 1:
+            self.rating = 0 # 計測不能
+            rating_str = ""
+        else:
+            self.rating = round(self.__calc_rating(self.win_rate),2)
+            rating_str = " R" + str(self.rating) + "[" \
+                    + str(round(EloRating.__rating_lowerbound(self.win_rate,total),2)) + "," \
+                    + str(round(EloRating.__rating_upperbound(self.win_rate,total),2)) + "]"
+
+        self.pretty_string = str(self.player1_win) + " - " + str(self.draw_games) + " - " + str(self.player2_win) \
+            + "(" + str(round(self.win_rate*100,2)) + "%" + rating_str + ")" \
+            + " winrate black , white = " \
+            + str(round(self.win_rate_black*100,2)) + "% , " \
+            + str(round(self.win_rate_white*100,2)) + "%"
+
+    # cf. http://tadaoyamaoka.hatenablog.com/entry/2017/06/14/203529
+    # ここで、rは勝率、nは対局数で、棄却域Rは、有意水準α=0.05とするとR>1.644854となる。
+
+    # r : 実際の対局の勝率 , p0 : 判定したい勝率 , n : 対局数 が 有意水準 0.05で有意かを判定する。
+    #def hypothesis_testing(r,n,p0):
+    #    return (r - p0)/math.sqrt(p0 * (1-p0)/n) > 1.644854
+
+    # r : 実際の対局の勝率 , n : 対局数 が 有意水準 0.05で有意なp0を返す
+    # 上の数式をp0に関して解析的に解く
+    @staticmethod
+    def __solve_hypothesis_testing(r,n):
+        a = 1.644854
+        return (a**2 - math.sqrt(a**4 - 4*(a**2)*n * (r**2) + 4*(a**2)*n*r) + 2*n*r) / (2 *( a**2 + n)) 
+        # cf.
+        # https://www.wolframalpha.com/input/?i=(r+-+x)%2Fsqrt(x+*+(1-x)%2Fn)+%3D+a
+
+    # 勝率が与えられたときにレーティングを返す
+    @staticmethod
+    def __calc_rating(r):
+        if r == 0:
+            return -99999
+        return -400*math.log(1/r -1 ,10) # log(x)は自然対数
+
+    # 勝率r,対局数nが与えられたときにレーティングの下限値を返す(信頼下限)
+    @staticmethod
+    def __rating_lowerbound(r,n):
+        p0 = EloRating.__solve_hypothesis_testing(r,n)
+        return EloRating.__calc_rating(p0)
+
+    # 勝率r,対局数nが与えられたときにレーティングの上限値を返す(信頼上限)
+    @staticmethod
+    def __rating_upperbound(r,n):
+        # 相手側から見た勝率と、相手側から見た信頼下限を出して、その符号を反転させれば良い
+        p0 = EloRating.__solve_hypothesis_testing(1-r,n)
+        return - EloRating.__calc_rating(p0)
+
+
+
 # 並列自己対局のためのクラス
 class MultiAyaneruServer:
 
@@ -1068,6 +1204,9 @@ class MultiAyaneruServer:
 
         # 開始局面の集合(このなかからランダムに1つ選ばれる)
         self.start_sfens = ["startpos"] # List[str]
+
+        # 1ゲームごとに手番を入れ替える。
+        self.flip_turn_every_game = True
 
         # これをinit_server()呼び出し前にTrueにしておくと、エンジンの通信内容が標準出力に出力される。
         self.debug_print = False
@@ -1087,10 +1226,15 @@ class MultiAyaneruServer:
         self.total_games = 0
 
         # player1が勝利したゲーム数
-        self.win_player1_games = 0
+        self.player1_win = 0
         # player2が勝利したゲーム数
-        self.win_player2_games = 0
+        self.player2_win = 0
         
+        # 先手の勝利したゲーム数
+        self.black_win = 0
+        # 後手の勝利したゲーム数
+        self.white_win = 0
+
         # 引き分けたゲーム数
         self.draw_games = 0
 
@@ -1121,6 +1265,7 @@ class MultiAyaneruServer:
 
 
     # すべてのあやねるサーバーに持ち時間設定を行う。
+    # AyaneruServer.set_time_setting()と設定の仕方は同じ。
     def set_time_setting(self,time_setting:str):
         for server in self.servers:
             server.set_time_setting(time_setting)
@@ -1128,9 +1273,14 @@ class MultiAyaneruServer:
 
     # すべての対局を開始する
     def game_start(self):
+        if len(self.servers) == 0:
+            raise ValueError("No Servers. Must call init_server()")
+
         self.total_games = 0
-        self.win_player1_games = 0
-        self.win_player2_games = 0
+        self.player1_win = 0
+        self.player2_win = 0
+        self.black_win = 0
+        self.white_win = 0
         self.draw_games = 0
 
         self.__game_stop = False
@@ -1159,8 +1309,15 @@ class MultiAyaneruServer:
 
     # 対局結果("70-3-50"みたいな1P勝利数 - 引き分け - 2P勝利数　と、その勝率から計算されるレーティング差を文字列化して返す)
     def game_info(self) -> str:
-        win_draw_lose = "{0}-{1}-{2}".format(self.win_player1_games , self.draw_games , self.win_player2_games)
-        return win_draw_lose
+        elo = EloRating()
+        elo.player1_win = self.player1_win
+        elo.player2_win = self.player2_win
+        elo.black_win   = self.black_win
+        elo.white_win   = self.white_win
+        elo.draw_games  = self.draw_games
+
+        elo.calc()
+        return elo.pretty_string
 
 
     # ゲーム対局用のスレッド
@@ -1178,17 +1335,20 @@ class MultiAyaneruServer:
             server.terminate()
         self.servers = []
 
-
-    # 対局結果を集計して、サーバーを再開(次の対局を開始)させる。
-    def __restart_server(self,server:AyaneruServer):
+    # 結果を集計、棋譜の保存
+    def __count_result(self,server:AyaneruServer):
         result =  server.game_result
 
         # 終局内容に応じて戦績を加算
         if result.is_black_or_white_win():
             if result.is_player1_win(server.flip_turn):
-                self.win_player1_games += 1
+                self.player1_win += 1
             else:
-                self.win_player2_games += 1
+                self.player2_win += 1
+            if result == GameResult.BLACK_WIN:
+                self.black_win += 1
+            else:
+                self.white_win += 1
         else:
             self.draw_games += 1
         self.total_games += 1
@@ -1200,8 +1360,15 @@ class MultiAyaneruServer:
         kifu.game_result = server.game_result
         self.game_kifus.append(kifu)
 
+
+    # 対局結果を集計して、サーバーを再開(次の対局を開始)させる。
+    def __restart_server(self,server:AyaneruServer):
+        # 対局結果の集計
+        self.__count_result(server)
+
         # flip_turnを反転させておく。(1局ごとに手番を入れ替え)
-        server.flip_turn ^= True
+        if self.flip_turn_every_game:
+            server.flip_turn ^= True
 
         # 終了していたので再開
         self.__start_server(server)
