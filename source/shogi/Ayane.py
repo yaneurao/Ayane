@@ -1154,14 +1154,17 @@ class EloRating:
             self.win_rate_black = 0
             self.win_rate_white = 0
         
-        if self.win_rate == 0 or self.win_rate == 1:
-            self.rating = 0 # 計測不能
-            rating_str = ""
-        else:
-            self.rating = round(self.__calc_rating(self.win_rate),2)
-            rating_str = " R" + str(self.rating) + "[" \
-                    + str(round(EloRating.__rating_lowerbound(self.win_rate,total),2)) + "," \
-                    + str(round(EloRating.__rating_upperbound(self.win_rate,total),2)) + "]"
+        # if self.win_rate == 0 or self.win_rate == 1:
+        #     self.rating = 0 # 計測不能
+        #     rating_str = ""
+        # else:
+
+        # →　勝率0% or 100%でも計算はしたほうがいいな。
+
+        self.rating = round(self.__calc_rating(self.win_rate),2)
+        rating_str = " R" + str(self.rating) + "[" \
+                + str(round(EloRating.__rating_lowerbound(self.win_rate,total),2)) + "," \
+                + str(round(EloRating.__rating_upperbound(self.win_rate,total),2)) + "]"
 
         self.pretty_string = str(self.player1_win) + " - " + str(self.draw_games) + " - " + str(self.player2_win) \
             + "(" + str(round(self.win_rate*100,2)) + "%" + rating_str + ")" \
@@ -1189,7 +1192,9 @@ class EloRating:
     @staticmethod
     def __calc_rating(r):
         if r == 0:
-            return -99999
+            return -9999
+        if r == 1:
+            return +9999
         return -400*math.log(1/r -1 ,10) # log(x)は自然対数
 
     # 勝率r,対局数nが与えられたときにレーティングの下限値を返す(信頼下限)

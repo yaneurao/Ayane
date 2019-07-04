@@ -460,7 +460,14 @@ def AyaneruGate():
         elo = server.game_rating()
 
         # 1P側は2P側よりどれだけ勝るか。
+        # 完勝のときは+無限大扱いでいいと思う。(以下でclipするので)
         rating_diff = elo.rating
+
+
+        # レーティングの移動量の絶対値の上限は、対局回数に比例させておく。
+        # (少ない対局回数で思いっきり変動してしまうのを防ぐため)
+        rating_diff = min(max(rating_diff , -loop),loop)
+
         player1_add = 0
         player2_add = 0
         if info1.rating_fix:
