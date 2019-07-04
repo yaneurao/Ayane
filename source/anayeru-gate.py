@@ -71,6 +71,8 @@
 import os
 import time
 import argparse
+import random
+from datetime import datetime
 import shogi.Ayane as ayane
 
 # エンジンに関する情報構造体
@@ -96,7 +98,7 @@ class EngineInfo :
         self.rating_fix = False
 
         # 開始時レーティング(これは、rating_fixではない場合、最後に"eninge_define.txt"ファイルに書き戻すものとします)
-        self.rating = 1500
+        self.rating = 1500 # int
 
         # エンジンの表示名
         self.engine_display_name = None
@@ -108,7 +110,7 @@ class EngineInfo :
         return os.path.join(engines_path,self.engine_folder)
 
     # エンジンの実行ファイル名 , フルパスで。
-    def exe_fullpath(self,home:str) -> str:
+    def engine_exe_fullpath(self,home:str) -> str:
         return os.path.join(self.engine_fullfolder(home),self.engine_path)
 
     # "engine_define.txt"のフルパス
@@ -170,7 +172,7 @@ class EngineInfo :
         elif token == "rating_fix":
             self.rating_fix = self.__str2bool(param)
         elif token == "rating":
-            self.rating = int(param)
+            self.rating = int(float(param))
 
 
     # このインスタンスの内容を文字列化する(デバッグ用など)
@@ -196,13 +198,65 @@ class EngineInfo :
         return param=="True" or param == "true" or param == "1" or param == "yes"
 
 
+# ログの書き出し用
+class Log:
+    def __init__(self,home:str,folder:str):
+
+        # ログフォルダ 絶対path
+        self.log_folder = ""
+
+        # ログファイル名 絶対path
+        self.log_filename = ""
+
+        # 書き出しているファイル
+        self.log_file = None # File
+
+        self.open(home,folder)
+
+
+    # ファイルのopen。
+    # コンストラクタで呼び出されるため、普通は明示的に呼び出す必要はない。
+    # ファイル名は日付で作成される。
+    def open(self,home:str,folder:str):
+        self.close()
+
+        self.log_folder = os.path.join(home,folder)
+        if not os.path.exists(self.log_folder):
+            os.mkdir(self.log_folder)
+        filename = "log{0}.txt".format(datetime.now().strftime('%Y-%m-%d %H-%M-%S'))
+        self.log_filename = os.path.join(self.log_folder,filename)
+
+        self.log_file = open(self.log_filename , "w" ,  encoding="utf_8_sig")
+
+    # ファイルをcloseする。
+    def close(self):
+        if self.log_file is not None:
+            self.log_file.close()
+            self.log_file = None
+
+    # 1行書き出す
+    # also_print == Trueなら標準出力にも出力する。
+    def print(self,message:str , also_print : bool = False , output_datetime : bool = False):
+        if output_datetime:
+            message = "[{0}]:{1}".format(datetime.now().strftime('%Y/%m/%d %H:%M:%S'),message)
+
+        self.log_file.write(message + "\n")
+        self.log_file.flush()
+        if also_print:
+            print(message)
+
+    def __del__(self):
+        self.close()
+
+
 def AyaneruGate():
 
     # --- コマンドラインのparseここから ---
 
     parser = argparse.ArgumentParser("ayaneru-gate.py")
 
-    # 持ち時間設定。デフォルト1秒
+    # 持ち時間設定。デフォルト0.1秒。
+    # エンジンのほうの設定でノード数を固定するとき秒数を固定するとか(MinimumThinkingTimeで)してエンジンを固定化するといいかも？
     parser.add_argument("--time",type=str,default="byoyomi 100",help="持ち時間設定 AyaneruServer.set_time_setting()の引数と同じ。")
 
     # home folder
@@ -212,7 +266,7 @@ def AyaneruGate():
     parser.add_argument("--iteration",type=int,default=10,help="number of iterations")
 
     # 対局回数
-    parser.add_argument("--loop",type=int,default=100,help="number of games")
+    parser.add_argument("--loop",type=int,default=10,help="number of games")
 
     # CPUコア数
     parser.add_argument("--cores",type=int,default=8,help="cpu cores(number of logical threads)")
@@ -242,6 +296,8 @@ def AyaneruGate():
     # directory
 
     home = args.home
+    log = Log(home , "log")
+    log.print("iteration start",also_print=True,output_datetime=True)
 
     # エンジンの列挙
 
@@ -258,30 +314,180 @@ def AyaneruGate():
         engine_infos.append(info)
 
     # 取得できたエンジンの一覧を表示
-    print("engines        :")
-    i = 0
-    for engine_info in engine_infos:
-        print("== Engine {0} ==".format(i))
-        engine_info.print()
-        i += 1
+    if False: # こんなん表示せんでええやろ。
+        print("engines        :")
+        i = 0
+        for engine_info in engine_infos:
+            print("== Engine {0} ==".format(i))
+            engine_info.print()
+            i += 1
+
+    # レーティングが変動するエンジンが少なくとも2つないと意味がない。
+    non_fixed_rating_engines = 0
+    for info in engine_infos:
+        if not info.rating_fix:
+            non_fixed_rating_engines += 1
+    if non_fixed_rating_engines < 2:
+        print("Error! : non fixed rating engine < 2")
+        raise ValueError()
+
+    # それぞれのエンジンのレーティングを表示する。
+    def output_engine_rating():
+        nonlocal log , engine_infos
+        log.print("== engine rating list ==",also_print=True)
+        for info in engine_infos:
+            log.print("engine : {0} , rating = {1} , rating_fix = {2} , threads = {3}".format(
+                info.engine_display_name , info.rating , info.rating_fix , info.engine_threads ),also_print=True)
+
+    output_engine_rating()
 
     # サーバーを一つ起動して、任意の2エンジンで100対局ほど繰り返して、レーティングを変動させる。
     # あとは、それをloop回数だけ繰り返す。
 
     for it in range(args.iteration):
-        print ("iteration : {0}".format(it))
+        log.print("iteration : {0}".format(it),also_print=True,output_datetime=True)
 
         # マルチあやねるサーバーの起動
-        pass 
-        # かきかけ
+        server = ayane.MultiAyaneruServer()
 
+        # エンジンとのやりとりを標準出力に出力する
+        # server.debug_print = True
 
-    # 最終的なレーティングを設定ファイルに書き戻す
-    for engine_info in engine_infos:
-        # レーティング固定化してあるものは書き出さない
-        if engine_info.rating_fix:
-            continue
-        engine_info.write_engine_define(home)
+        # 2つのエンジンを選択
+        info1 = None
+        info2 = None
+        while True:
+            num_of_engines = len(engine_infos)
+            p1 = random.randint(0,num_of_engines-1)
+            p2 = random.randint(0,num_of_engines-1)
+            # 同じプレイヤー同士の対局には意味がない
+            if p1 == p2:
+                continue
+
+            # engine番号が若い順になって欲しい。
+            if p1 > p2:
+                p1, p2 = p2, p1
+                # pythonのswapテクニック
+
+            info1 = engine_infos[p1]
+            info2 = engine_infos[p2]
+            # 両側がレーティング固定であっても意味がない。
+            if info1.rating_fix and info2.rating_fix:
+                continue
+
+            # 条件を満たしたので抜ける
+            break
+
+        # 今回対局するエンジン名を出力
+
+        log.print("engine : {0} vs {1}".format(info1.engine_display_name,info2.engine_display_name),also_print=True)
+
+        # エンジンの設定
+
+        engine1 = info1.engine_exe_fullpath(home)
+        engine2 = info2.engine_exe_fullpath(home)
+
+        thread1 = info1.engine_threads
+        thread2 = info2.engine_threads
+
+        # 1対局に要するスレッド数
+        # (先後、同時に思考しないので大きいほう)
+        thread_total = max(thread1 , thread2)
+        # 何並列で対局するのか？ 2スレほど余らせておかないとtimeupになるかもしれん。
+        # メモリが足りるかは知らん。メモリ足りないとこれまたメモリスワップでtimeupになる。
+        cores = max(args.cores - 2 , 1)
+        game_server_num = int(cores / thread_total)
+
+        # あやねるサーバーを起動
+        server.init_server(game_server_num)
+
+        # エンジンオプション
+        options_common = {"NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"320","MinimumThinkingTime":"0","BookFile":"no_book"}
+        # 1P,2P側のエンジンそれぞれを設定して初期化する。
+        server.init_engine(0,engine1, options_common )
+        server.init_engine(1,engine2, options_common )
+
+        # 持ち時間設定。
+        server.set_time_setting(args.time)
+
+        # flip_turnを反映させる
+        server.flip_turn_every_game = args.flip_turn
+
+        # 定跡
+
+        if args.book_file is None:
+            start_sfens = ["startpos"]
+        else:
+            book_filepath = os.path.join(home,args.book_file)
+            with open(book_filepath) as f:
+                start_sfens = f.readlines()
+        server.start_sfens = start_sfens
+        server.start_gameply = args.start_gameply
+
+        # 対局スレッド数、秒読み設定などを短縮文字列化する。
+        if thread1 == thread2:
+            game_setting_str = "t{0}".format(thread1)
+        else:
+            game_setting_str = "t{0},{1}".format(thread1,thread2)
+        game_setting_str += args.time.replace("byoyomi","b").replace("time","t").replace("inc","i").replace(" ","")
+
+        # loop回数試合終了するのを待つ
+        last_total_games = 0
+        loop = args.loop
+
+        # ゲーム数が増えていたら、途中結果を出力する。
+        def output_info():
+            nonlocal last_total_games , server , log
+            if last_total_games != server.total_games:
+                last_total_games = server.total_games
+                log.print(game_setting_str + "." + server.game_info(),also_print=True)
+
+        # これで対局が開始する
+        server.game_start()
+
+        while server.total_games < loop :
+            output_info()
+            time.sleep(1)
+        output_info()
+
+        server.game_stop()
+
+        # 対局棋譜の出力(ログとしてフォルダに書き出しておく)
+        for kifu in server.game_kifus:
+            log.print("game sfen = {0} , flip_turn = {1} , game_result = {2}".format(kifu.sfen , kifu.flip_turn , str(kifu.game_result)))
+
+        # 対局が終わったのでレーティングの移動を行う
+        elo = server.game_rating()
+
+        # 1P側は2P側よりどれだけ勝るか。
+        rating_diff = elo.rating
+        player1_add = 0
+        player2_add = 0
+        if info1.rating_fix:
+            player2_add = -rating_diff
+        elif info2.rating_fix:
+            player1_add = +rating_diff
+        else:
+            player1_add = +int(rating_diff/2)
+            player2_add = -int(rating_diff/2)
+        
+        log.print("Player1 : {0} , rating {1} -> {2}".format(info1.engine_display_name , info1.rating , info1.rating + player1_add),also_print=True)
+        log.print("Player2 : {0} , rating {1} -> {2}".format(info2.engine_display_name , info2.rating , info2.rating + player2_add),also_print=True)
+
+        info1.rating += player1_add
+        info2.rating += player2_add
+
+        # レーティングが変動したのなら、エンジン設定ファイルに書き戻す
+        if player1_add != 0:
+            info1.write_engine_define(home)
+        if player2_add != 0:
+            info2.write_engine_define(home)
+
+    # iteration回数だけ繰り返したので終了する。
+    output_engine_rating()
+    log.print("iteration end",also_print=True , output_datetime=True)
+    server.terminate()
+    log.close()
 
 
 if __name__ == "__main__":

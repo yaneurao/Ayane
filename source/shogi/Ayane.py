@@ -1329,15 +1329,20 @@ class MultiAyaneruServer:
 
     # 対局結果("70-3-50"みたいな1P勝利数 - 引き分け - 2P勝利数　と、その勝率から計算されるレーティング差を文字列化して返す)
     def game_info(self) -> str:
+        elo = self.game_rating()
+        return elo.pretty_string
+
+
+    # Eloレーティングを計算して返す。(EloRating型を)
+    def game_rating(self) -> EloRating:
         elo = EloRating()
         elo.player1_win = self.player1_win
         elo.player2_win = self.player2_win
         elo.black_win   = self.black_win
         elo.white_win   = self.white_win
         elo.draw_games  = self.draw_games
-
         elo.calc()
-        return elo.pretty_string
+        return elo
 
 
     # ゲーム対局用のスレッド

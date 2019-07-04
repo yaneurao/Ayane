@@ -115,14 +115,14 @@ if __name__ == "__main__":
 マルチあやねるサーバーを用いた並列対局を実現するスクリプト。
 勝率、レーティング差、95%信頼下限～信頼上限のレーティング差などを自動計算して表示。
 
-- [ayaneru-colosseum.py](ayaneru-colosseum.py)
+- [ayaneru-colosseum.py](source/ayaneru-colosseum.py)
 
 
 ## あやねるゲート
 
 あやねるサーバーを用いた複数ソフト間の対局を自動化するスクリプト。
-近日公開予定。
 
+- [ayaneru-gate.py](source/ayaneru-gate.py)
 
 # License
 
