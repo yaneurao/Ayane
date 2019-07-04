@@ -72,7 +72,6 @@ import os
 import time
 import argparse
 import random
-from datetime import datetime
 import shogi.Ayane as ayane
 
 # エンジンに関する情報構造体
@@ -198,57 +197,6 @@ class EngineInfo :
         return param=="True" or param == "true" or param == "1" or param == "yes"
 
 
-# ログの書き出し用
-class Log:
-    def __init__(self,home:str,folder:str):
-
-        # ログフォルダ 絶対path
-        self.log_folder = ""
-
-        # ログファイル名 絶対path
-        self.log_filename = ""
-
-        # 書き出しているファイル
-        self.log_file = None # File
-
-        self.open(home,folder)
-
-
-    # ファイルのopen。
-    # コンストラクタで呼び出されるため、普通は明示的に呼び出す必要はない。
-    # ファイル名は日付で作成される。
-    def open(self,home:str,folder:str):
-        self.close()
-
-        self.log_folder = os.path.join(home,folder)
-        if not os.path.exists(self.log_folder):
-            os.mkdir(self.log_folder)
-        filename = "log{0}.txt".format(datetime.now().strftime('%Y-%m-%d %H-%M-%S'))
-        self.log_filename = os.path.join(self.log_folder,filename)
-
-        self.log_file = open(self.log_filename , "w" ,  encoding="utf_8_sig")
-
-    # ファイルをcloseする。
-    def close(self):
-        if self.log_file is not None:
-            self.log_file.close()
-            self.log_file = None
-
-    # 1行書き出す
-    # also_print == Trueなら標準出力にも出力する。
-    def print(self,message:str , also_print : bool = False , output_datetime : bool = False):
-        if output_datetime:
-            message = "[{0}]:{1}".format(datetime.now().strftime('%Y/%m/%d %H:%M:%S'),message)
-
-        self.log_file.write(message + "\n")
-        self.log_file.flush()
-        if also_print:
-            print(message)
-
-    def __del__(self):
-        self.close()
-
-
 def AyaneruGate():
 
     # --- コマンドラインのparseここから ---
@@ -296,8 +244,8 @@ def AyaneruGate():
     # directory
 
     home = args.home
-    log = Log(home , "log")
-    log.print("iteration start",also_print=True,output_datetime=True)
+    log = ayane.Log(os.path.join(home ,"log"))
+    log.print("iteration start",output_datetime=True)
 
     # エンジンの列挙
 
@@ -345,7 +293,7 @@ def AyaneruGate():
     # あとは、それをloop回数だけ繰り返す。
 
     for it in range(args.iteration):
-        log.print("iteration : {0}".format(it),also_print=True,output_datetime=True)
+        log.print("iteration : {0}".format(it),output_datetime=True)
 
         # マルチあやねるサーバーの起動
         server = ayane.MultiAyaneruServer()
@@ -440,7 +388,7 @@ def AyaneruGate():
             nonlocal last_total_games , server , log
             if last_total_games != server.total_games:
                 last_total_games = server.total_games
-                log.print(game_setting_str + "." + server.game_info(),also_print=True)
+                log.print(game_setting_str + "." + server.game_info())
 
         # これで対局が開始する
         server.game_start()
@@ -454,7 +402,7 @@ def AyaneruGate():
 
         # 対局棋譜の出力(ログとしてフォルダに書き出しておく)
         for kifu in server.game_kifus:
-            log.print("game sfen = {0} , flip_turn = {1} , game_result = {2}".format(kifu.sfen , kifu.flip_turn , str(kifu.game_result)))
+            log.print("game sfen = {0} , flip_turn = {1} , game_result = {2}".format(kifu.sfen , kifu.flip_turn , str(kifu.game_result)),also_print = False)
 
         # 対局が終わったのでレーティングの移動を行う
         elo = server.game_rating()
