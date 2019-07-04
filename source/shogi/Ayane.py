@@ -8,6 +8,7 @@ from queue import Queue
 from enum import Enum
 from enum import IntEnum
 
+
 # unit_test1.pyのほうのコードを見ると最低限の使い方は理解できるはずです。(それがサンプルを兼ねているので)
 
 # しかし、それ以上に利用しようとする場合、多少はUSIプロトコルについて理解している必要があります。
@@ -1100,7 +1101,9 @@ class GameKifu:
 
 
 class EloRating:
+
     def __init__(self):
+
         # --- public members ---
         
         # 1P側の勝利回数
@@ -1137,9 +1140,11 @@ class EloRating:
         # レーティング差についてユーザーに見やすい形での文字列
         self.pretty_string = ""
 
+
     # このクラスのpublic membersのところを設定して、このcalc()を呼び出すと、
     # レーティングなどが計算されて、public readonly membersのところに反映される。
     def calc(self):
+
         # 引き分け以外の有効な試合数
         total = float(self.player1_win + self.player2_win)
     
@@ -1172,6 +1177,7 @@ class EloRating:
             + str(round(self.win_rate_black*100,2)) + "% , " \
             + str(round(self.win_rate_white*100,2)) + "%"
 
+
     # cf. http://tadaoyamaoka.hatenablog.com/entry/2017/06/14/203529
     # ここで、rは勝率、nは対局数で、棄却域Rは、有意水準α=0.05とするとR>1.644854となる。
 
@@ -1188,6 +1194,7 @@ class EloRating:
         # cf.
         # https://www.wolframalpha.com/input/?i=(r+-+x)%2Fsqrt(x+*+(1-x)%2Fn)+%3D+a
 
+
     # 勝率が与えられたときにレーティングを返す
     @staticmethod
     def __calc_rating(r):
@@ -1195,13 +1202,16 @@ class EloRating:
             return -9999
         if r == 1:
             return +9999
-        return -400*math.log(1/r -1 ,10) # log(x)は自然対数
+        return -400*math.log(1/r -1 ,10)
+        # log(x)は自然対数なので、底を10にするならlog(x,10)と書かないといけない。
+
 
     # 勝率r,対局数nが与えられたときにレーティングの下限値を返す(信頼下限)
     @staticmethod
     def __rating_lowerbound(r,n):
         p0 = EloRating.__solve_hypothesis_testing(r,n)
         return EloRating.__calc_rating(p0)
+
 
     # 勝率r,対局数nが与えられたときにレーティングの上限値を返す(信頼上限)
     @staticmethod
@@ -1364,6 +1374,7 @@ class MultiAyaneruServer:
         for server in self.servers:
             server.terminate()
         self.servers = []
+
 
     # 結果を集計、棋譜の保存
     def __count_result(self,server:AyaneruServer):
