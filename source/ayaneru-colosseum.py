@@ -43,7 +43,7 @@
 # エンジン1P側のevalフォルダ、エンジン2P側のevalフォルダ
 
 # --flip_turn
-# 1局ごとに先後入れ替えるのか(デフォルト:False)
+# 1局ごとに先後入れ替えるのか(デフォルト:True)
 
 # --book_file
 # 定跡ファイル("startpos moves ..."や"sfen ... moves ..."のような書式で書かれているものとする)
@@ -56,8 +56,7 @@ import time
 import argparse
 import shogi.Ayane as ayane
 
-if __name__ == "__main__":
-
+def AyaneruColosseum():
     # --- コマンドラインのparseここから ---
 
     parser = argparse.ArgumentParser("ayaneru-colosseum.py")
@@ -103,9 +102,7 @@ if __name__ == "__main__":
 
     # --- コマンドラインのparseここまで ---
 
-    home = args.home
-
-    print("home           : {0}".format(home))
+    print("home           : {0}".format(args.home))
     print("engine1        : {0}".format(args.engine1))
     print("engine2        : {0}".format(args.engine2))
     print("eval1          : {0}".format(args.eval1))
@@ -119,6 +116,9 @@ if __name__ == "__main__":
     print("book file      : {0}".format(args.book_file))
     print("start_gameply  : {0}".format(args.start_gameply))
 
+    # directory
+
+    home = args.home
     engine1 = os.path.join(home,args.engine1)
     engine2 = os.path.join(home,args.engine2)
     eval1 = os.path.join(home,args.eval1)
@@ -185,7 +185,7 @@ if __name__ == "__main__":
 
     # ゲーム数が増えていたら、途中結果を出力する。
     def output_info():
-        global last_total_games , server
+        nonlocal last_total_games , server
         if last_total_games != server.total_games:
             last_total_games = server.total_games
             print(game_setting_str + "." + server.game_info())
@@ -202,3 +202,7 @@ if __name__ == "__main__":
     #     print("game sfen = {0} , flip_turn = {1} , game_result = {2}".format(kifu.sfen , kifu.flip_turn , str(kifu.game_result)))
 
     server.terminate()
+
+
+if __name__ == "__main__":
+    AyaneruColosseum()

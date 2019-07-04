@@ -946,7 +946,9 @@ class AyaneruServer:
         # 開始手数。0なら無視(末尾の局面からなので)
         if start_gameply != 0:
             sp = sfen.split()
+            # "moves"の文字列は上で追加しているので必ず存在すると仮定できる。
             index = min( sp.index( "moves") + start_gameply - 1 , len(sp) - 1)
+            # sp[0]からsp[index]までの文字列を連結する。
             sfen = ' '.join(sp[0:index + 1])
 
         self.sfen = sfen
