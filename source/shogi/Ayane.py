@@ -1083,6 +1083,7 @@ class AyaneruServer:
             engine.error_print = self.error_print
         
         # 1P側のエンジンを使って、現局面の手番を得る。
+        self.engines[0].usi_position(self.sfen)
         self.side_to_move = self.engines[0].get_side_to_move()
         self.game_ply = 1
         self.game_result = GameResult.PLAYING
