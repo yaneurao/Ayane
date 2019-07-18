@@ -74,6 +74,7 @@ import argparse
 import random
 import shogi.Ayane as ayane
 
+
 # エンジンに関する情報構造体
 class EngineInfo :
     def __init__(self):
@@ -97,33 +98,32 @@ class EngineInfo :
         self.rating_fix = False
 
         # 開始時レーティング(これは、rating_fixではない場合、最後に"eninge_define.txt"ファイルに書き戻すものとします)
-        self.rating = 1500 # int
+        self.rating = 1500  # int
 
         # エンジンの表示名
         self.engine_display_name = None
 
-
     # エンジンのフォルダ名 , フルパスで。
-    def engine_fullfolder(self,home:str) -> str:
-        engines_path = os.path.join(home , "engines")
-        return os.path.join(engines_path,self.engine_folder)
+    def engine_fullfolder(self, home: str) -> str:
+        engines_path = os.path.join(home, "engines")
+        return os.path.join(engines_path, self.engine_folder)
 
     # エンジンの実行ファイル名 , フルパスで。
-    def engine_exe_fullpath(self,home:str) -> str:
-        return os.path.join(self.engine_fullfolder(home),self.engine_path)
+    def engine_exe_fullpath(self, home: str) -> str:
+        return os.path.join(self.engine_fullfolder(home), self.engine_path)
 
     # "engine_define.txt"のフルパス
     # 事前にself.engine_pathは設定されているものとする。
-    def engine_define_path(self,home:str) -> str:
+    def engine_define_path(self, home: str) -> str:
         return os.path.join(self.engine_fullfolder(home),"engine_define.txt")
 
-    def read_engine_define(self,home:str):
+    def read_engine_define(self, home: str):
         path = self.engine_define_path(home)
         if not os.path.exists(path):
             print("Error : {0} is not exist.".format(path))
             return
 
-        with open(path , "r" , encoding="utf_8_sig") as f:
+        with open(path, "r", encoding="utf_8_sig") as f:
             lines = f.readlines()
             for line in lines:
                 self.parse(line)
@@ -141,12 +141,11 @@ class EngineInfo :
         if self.engine_display_name is None:
             self.engine_display_name = self.engine_folder
 
-
     # このインスタンスの内容を設定ファイルに書き戻す
     def write_engine_define(self,home:str):
         path = self.engine_define_path(home)
         with open(path , "w", encoding="utf_8_sig") as f:
-            s  = [
+            s = [
                 "exe:{0}".format(self.engine_path),
                 "threads:{0}".format(self.engine_threads),
                 "rating_fix:{0}".format(self.rating_fix),
@@ -156,7 +155,7 @@ class EngineInfo :
             f.writelines("\n".join(s))
 
     # 設定ファイルの1行をparseして、該当するメンバに格納する。
-    def parse(self,line:str):
+    def parse(self, line: str):
         tokens = line.strip().split(":")
         if len(tokens) < 2:
             return
@@ -172,7 +171,6 @@ class EngineInfo :
             self.rating_fix = self.__str2bool(param)
         elif token == "rating":
             self.rating = int(float(param))
-
 
     # このインスタンスの内容を文字列化する(デバッグ用など)
     def to_string(self) -> str:
@@ -190,11 +188,10 @@ class EngineInfo :
     def print(self):
         print(self.to_string(),end="")
 
-
     # str型をbool型に変換する。
     # "True","true","1","yes"ならTrueとして扱う。
-    def __str2bool(self,param:str) -> bool:
-        return param=="True" or param == "true" or param == "1" or param == "yes"
+    def __str2bool(self, param: str) -> bool:
+        return param == "True" or param == "true" or param == "1" or param == "yes"
 
 
 def AyaneruGate():
@@ -205,28 +202,28 @@ def AyaneruGate():
 
     # 持ち時間設定。デフォルト0.1秒。
     # エンジンのほうの設定でノード数を固定するとき秒数を固定するとか(MinimumThinkingTimeで)してエンジンを固定化するといいかも？
-    parser.add_argument("--time",type=str,default="byoyomi 100",help="持ち時間設定 AyaneruServer.set_time_setting()の引数と同じ。")
+    parser.add_argument("--time", type=str, default="byoyomi 100", help="持ち時間設定 AyaneruServer.set_time_setting()の引数と同じ。")
 
     # home folder
-    parser.add_argument("--home",type=str,default="AyaneruGate",help="home folder")
+    parser.add_argument("--home", type=str, default="AyaneruGate", help="home folder")
 
     # イテレーション回数
-    parser.add_argument("--iteration",type=int,default=10,help="number of iterations")
+    parser.add_argument("--iteration", type=int, default=10, help="number of iterations")
 
     # 対局回数
-    parser.add_argument("--loop",type=int,default=10,help="number of games")
+    parser.add_argument("--loop", type=int, default=10, help="number of games")
 
     # CPUコア数
-    parser.add_argument("--cores",type=int,default=8,help="cpu cores(number of logical threads)")
+    parser.add_argument("--cores", type=int, default=8, help="cpu cores(number of logical threads)")
 
     # flip_turn
-    parser.add_argument("--flip_turn",type=bool,default=True,help="flip turn every game")
+    parser.add_argument("--flip_turn", type=bool, default=True, help="flip turn every game")
 
     # book_file
-    parser.add_argument("--book_file",type=str,default="book/records2016_10818.sfen",help="book filepath")
+    parser.add_argument("--book_file", type=str, default="book/records2016_10818.sfen", help="book filepath")
 
     # start_gameply
-    parser.add_argument("--start_gameply",type=int,default=24,help="start game ply in the book")
+    parser.add_argument("--start_gameply", type=int, default=24, help="start game ply in the book")
 
     args = parser.parse_args()
 
@@ -244,12 +241,12 @@ def AyaneruGate():
     # directory
 
     home = args.home
-    log = ayane.Log(os.path.join(home ,"log"))
-    log.print("iteration start",output_datetime=True)
+    log = ayane.Log(os.path.join(home, "log"))
+    log.print("iteration start", output_datetime=True)
 
     # エンジンの列挙
 
-    engines_folder = os.path.join(home , "engines")
+    engines_folder = os.path.join(home, "engines")
     if not os.path.exists(engines_folder):
         print("Error : {0} folder is not exist.".format(engines_folder))
         return
@@ -281,11 +278,11 @@ def AyaneruGate():
 
     # それぞれのエンジンのレーティングを表示する。
     def output_engine_rating():
-        nonlocal log , engine_infos
-        log.print("== engine rating list ==",also_print=True)
+        nonlocal log, engine_infos
+        log.print("== engine rating list ==", also_print=True)
         for info in engine_infos:
             log.print("engine : {0} , rating = {1} , rating_fix = {2} , threads = {3}".format(
-                info.engine_display_name , info.rating , info.rating_fix , info.engine_threads ),also_print=True)
+                info.engine_display_name, info.rating, info.rating_fix, info.engine_threads), also_print=True)
 
     output_engine_rating()
 
@@ -293,7 +290,7 @@ def AyaneruGate():
     # あとは、それをloop回数だけ繰り返す。
 
     for it in range(args.iteration):
-        log.print("iteration : {0}".format(it),output_datetime=True)
+        log.print("iteration : {0}".format(it), output_datetime=True)
 
         # マルチあやねるサーバーの起動
         server = ayane.MultiAyaneruServer()
@@ -306,8 +303,8 @@ def AyaneruGate():
         info2 = None
         while True:
             num_of_engines = len(engine_infos)
-            p1 = random.randint(0,num_of_engines-1)
-            p2 = random.randint(0,num_of_engines-1)
+            p1 = random.randint(0, num_of_engines-1)
+            p2 = random.randint(0, num_of_engines-1)
             # 同じプレイヤー同士の対局には意味がない
             if p1 == p2:
                 continue
@@ -328,7 +325,7 @@ def AyaneruGate():
 
         # 今回対局するエンジン名を出力
 
-        log.print("engine : {0} vs {1}".format(info1.engine_display_name,info2.engine_display_name),also_print=True)
+        log.print("engine : {0} vs {1}".format(info1.engine_display_name, info2.engine_display_name), also_print=True)
 
         # エンジンの設定
 
@@ -340,20 +337,26 @@ def AyaneruGate():
 
         # 1対局に要するスレッド数
         # (先後、同時に思考しないので大きいほう)
-        thread_total = max(thread1 , thread2)
+        thread_total = max(thread1, thread2)
         # 何並列で対局するのか？ 2スレほど余らせておかないとtimeupになるかもしれん。
         # メモリが足りるかは知らん。メモリ足りないとこれまたメモリスワップでtimeupになる。
-        cores = max(args.cores - 2 , 1)
+        cores = max(args.cores - 2, 1)
         game_server_num = int(cores / thread_total)
 
         # あやねるサーバーを起動
         server.init_server(game_server_num)
 
         # エンジンオプション
-        options_common = {"NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"320","MinimumThinkingTime":"0","BookFile":"no_book"}
+        options_common = {
+            "NetworkDelay": "0",
+            "NetworkDelay2": "0",
+            "MaxMovesToDraw": "320",
+            "MinimumThinkingTime": "0",
+            "BookFile": "no_book"
+        }
         # 1P,2P側のエンジンそれぞれを設定して初期化する。
-        server.init_engine(0,engine1, options_common )
-        server.init_engine(1,engine2, options_common )
+        server.init_engine(0, engine1, options_common)
+        server.init_engine(1, engine2, options_common)
 
         # 持ち時間設定。
         server.set_time_setting(args.time)
@@ -376,8 +379,8 @@ def AyaneruGate():
         if thread1 == thread2:
             game_setting_str = "t{0}".format(thread1)
         else:
-            game_setting_str = "t{0},{1}".format(thread1,thread2)
-        game_setting_str += args.time.replace("byoyomi","b").replace("time","t").replace("inc","i").replace(" ","")
+            game_setting_str = "t{0},{1}".format(thread1, thread2)
+        game_setting_str += args.time.replace("byoyomi", "b").replace("time", "t").replace("inc", "i").replace(" ", "")
 
         # loop回数試合終了するのを待つ
         last_total_games = 0
@@ -385,7 +388,7 @@ def AyaneruGate():
 
         # ゲーム数が増えていたら、途中結果を出力する。
         def output_info():
-            nonlocal last_total_games , server , log
+            nonlocal last_total_games, server, log
             if last_total_games != server.total_games:
                 last_total_games = server.total_games
                 log.print(game_setting_str + "." + server.game_info())
@@ -393,7 +396,7 @@ def AyaneruGate():
         # これで対局が開始する
         server.game_start()
 
-        while server.total_games < loop :
+        while server.total_games < loop:
             output_info()
             time.sleep(1)
         output_info()
@@ -402,7 +405,7 @@ def AyaneruGate():
 
         # 対局棋譜の出力(ログとしてフォルダに書き出しておく)
         for kifu in server.game_kifus:
-            log.print("game sfen = {0} , flip_turn = {1} , game_result = {2}".format(kifu.sfen , kifu.flip_turn , str(kifu.game_result)),also_print = False)
+            log.print("game sfen = {0} , flip_turn = {1} , game_result = {2}".format(kifu.sfen, kifu.flip_turn, str(kifu.game_result)), also_print=False)
 
         # 対局が終わったのでレーティングの移動を行う
         elo = server.game_rating()
@@ -411,10 +414,9 @@ def AyaneruGate():
         # 完勝のときは+無限大扱いでいいと思う。(以下でclipするので)
         rating_diff = elo.rating
 
-
         # レーティングの移動量の絶対値の上限は、対局回数に比例させておく。
         # (少ない対局回数で思いっきり変動してしまうのを防ぐため)
-        rating_diff = min(max(rating_diff , -loop),loop)
+        rating_diff = min(max(rating_diff, -loop), loop)
 
         player1_add = 0
         player2_add = 0
@@ -426,8 +428,8 @@ def AyaneruGate():
             player1_add = +int(rating_diff/2)
             player2_add = -int(rating_diff/2)
         
-        log.print("Player1 : {0} , rating {1} -> {2}".format(info1.engine_display_name , info1.rating , info1.rating + player1_add),also_print=True)
-        log.print("Player2 : {0} , rating {1} -> {2}".format(info2.engine_display_name , info2.rating , info2.rating + player2_add),also_print=True)
+        log.print("Player1 : {0} , rating {1} -> {2}".format(info1.engine_display_name, info1.rating, info1.rating + player1_add), also_print=True)
+        log.print("Player2 : {0} , rating {1} -> {2}".format(info2.engine_display_name, info2.rating, info2.rating + player2_add), also_print=True)
 
         info1.rating += player1_add
         info2.rating += player2_add
@@ -448,4 +450,3 @@ def AyaneruGate():
 if __name__ == "__main__":
 
     AyaneruGate()
-    

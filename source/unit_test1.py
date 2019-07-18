@@ -2,6 +2,7 @@ import unittest
 import shogi.Ayane as ayane
 import time
 
+
 class TestAyane(unittest.TestCase):
     
     # 通常探索用の思考エンジンの接続テスト
@@ -17,7 +18,12 @@ class TestAyane(unittest.TestCase):
 
         # エンジンオプション自体は、基本的には"engine_options.txt"で設定する。(やねうら王のdocs/を読むべし)
         # 特定のエンジンオプションをさらに上書きで設定できる
-        usi.set_engine_options({"Hash":"128","Threads":"4","NetworkDelay":"0","NetworkDelay2":"0"})
+        usi.set_engine_options({
+            "Hash": "128",
+            "Threads": "4",
+            "NetworkDelay": "0",
+            "NetworkDelay2": "0"
+        })
 
         # エンジンに接続
         # 通常の思考エンジンであるものとする。
@@ -30,7 +36,7 @@ class TestAyane(unittest.TestCase):
 
         # 現局面での指し手の集合を得る
         moves = usi.get_moves()
-        self.assertEqual(moves , "1c1d 2c2d 3c3d 4c4d 5c5d 6c6d 7c7d 8c8d 9c9d 1a1b 9a9b 3a3b 3a4b 7a6b 7a7b 8b3b 8b4b 8b5b 8b6b 8b7b 8b9b 4a3b 4a4b 4a5b 5a4b 5a5b 5a6b 6a5b 6a6b 6a7b")
+        self.assertEqual(moves, "1c1d 2c2d 3c3d 4c4d 5c5d 6c6d 7c7d 8c8d 9c9d 1a1b 9a9b 3a3b 3a4b 7a6b 7a7b 8b3b 8b4b 8b5b 8b6b 8b7b 8b9b 4a3b 4a4b 4a5b 5a4b 5a5b 5a6b 6a5b 6a6b 6a7b")
 
         # 現在の局面の手番を得る
         turn = usi.get_side_to_move()
@@ -46,8 +52,7 @@ class TestAyane(unittest.TestCase):
 
         # エンジンを切断
         usi.disconnect()
-        self.assertEqual( usi.engine_state , ayane.UsiEngineState.Disconnected)
-
+        self.assertEqual(usi.engine_state, ayane.UsiEngineState.Disconnected)
 
     # 非同期で思考させるテスト
     def test_ayane2(self):
@@ -55,7 +60,12 @@ class TestAyane(unittest.TestCase):
 
         usi = ayane.UsiEngine()
         # usi.debug_print = True
-        usi.set_engine_options({"Hash":"128","Threads":"4","NetworkDelay":"0","NetworkDelay2":"0"})
+        usi.set_engine_options({
+            "Hash": "128",
+            "Threads": "4",
+            "NetworkDelay": "0",
+            "NetworkDelay2": "0"
+        })
         usi.connect("exe/YaneuraOu.exe")
 
         # usi.send_position("startpos moves 7g7f")
@@ -74,8 +84,7 @@ class TestAyane(unittest.TestCase):
         print("=== UsiThinkResult ===\n" + usi.think_result.to_string())
 
         usi.disconnect()
-        self.assertEqual( usi.engine_state , ayane.UsiEngineState.Disconnected)
-
+        self.assertEqual(usi.engine_state, ayane.UsiEngineState.Disconnected)
 
     # ある局面に対して、余詰め(bestmove以外のmateの指し手)があるかどうかを調べるテスト
     def test_ayane3(self):
@@ -89,7 +98,12 @@ class TestAyane(unittest.TestCase):
 
         usi = ayane.UsiEngine()
         # usi.debug_print = True
-        usi.set_engine_options({"Hash":"128","Threads":"4","NetworkDelay":"0","NetworkDelay2":"0"})
+        usi.set_engine_options({
+            "Hash": "128",
+            "Threads": "4",
+            "NetworkDelay": "0",
+            "NetworkDelay2": "0"
+        })
         usi.connect("exe/YaneuraOu.exe")
 
         for sfen in sfens:
@@ -101,17 +115,13 @@ class TestAyane(unittest.TestCase):
             usi.usi_go_and_wait_bestmove("btime 0 wtime 0 byoyomi 5000")
 
             if len(usi.think_result.pvs) < 2:
-                print("sfen = {0 } : only one move".format(sfen))
+                print(f"sfen = {sfen} : only one move")
             else:
-                print("sfen = {0} : 1つ目の指し手の評価値 {1} , 2つ目の指し手の評価値 {2} , 余詰めあり？ {3} ".format( \
-                    sfen,
-                    usi.think_result.pvs[0].eval.to_string(),
-                    usi.think_result.pvs[1].eval.to_string(),
-                    ayane.UsiEvalValue.is_mate_score(usi.think_result.pvs[1].eval) # mateスコアか？
-                    ))
+                print(f"sfen = {sfen} : 1つ目の指し手の評価値 {usi.think_result.pvs[0].eval.to_string()},"
+                      f" 2つ目の指し手の評価値 {usi.think_result.pvs[1].eval.to_string()} ,"
+                      f" 余詰めあり？ {ayane.UsiEvalValue.is_mate_score(usi.think_result.pvs[1].eval)}")
 
         usi.disconnect()
-
 
     # エンジン二つ起動して、対局させるテスト
     def test_ayane4(self):
@@ -123,20 +133,26 @@ class TestAyane(unittest.TestCase):
         for _ in range(2):
             usi = ayane.UsiEngine()
         #    usi.debug_print = True
-            usi.set_engine_options({"Hash":"128","Threads":"1","NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"256" \
-                , "MinimumThinkingTime":"0"})
+            usi.set_engine_options({
+                "Hash": "128",
+                "Threads": "1",
+                "NetworkDelay": "0",
+                "NetworkDelay2": "0",
+                "MaxMovesToDraw": "256",
+                "MinimumThinkingTime": "0"
+            })
             usi.connect("exe/YaneuraOu.exe")
             usis.append(usi)
 
         # 棋譜
         sfen = "startpos moves"
         # 手数
-        gamePly = 1
+        game_ply = 1
         # 手番(先手=0 , 後手=1)
         turn = 0
 
         # 256手ルール
-        while gamePly < 256:
+        while game_ply < 256:
             usi = usis[turn]
 
             # 局面を設定する
@@ -148,8 +164,8 @@ class TestAyane(unittest.TestCase):
             bestmove = usi.think_result.bestmove
 
             # 評価値を表示させてみる
-            #print(usi.think_result.pvs[0].eval)
-            #print(usi.think_result.pvs[0].eval.to_string())
+            # print(usi.think_result.pvs[0].eval)
+            # print(usi.think_result.pvs[0].eval.to_string())
 
             # 投了 or 宣言勝ち
             if bestmove == "resign" or bestmove == "win":
@@ -160,7 +176,7 @@ class TestAyane(unittest.TestCase):
 
             # 手番反転
             turn ^= 1
-            gamePly += 1
+            game_ply += 1
 
         # 棋譜の出力
         print("game sfen = " + sfen)
@@ -168,16 +184,21 @@ class TestAyane(unittest.TestCase):
         for usi in usis:
             usi.disconnect()
 
-
     # あやねるサーバーを使った対局例    
     def test_ayane5(self):
         print("test_ayane5 : ")
 
         server = ayane.AyaneruServer()
         for engine in server.engines:
-            engine.set_engine_options({"Hash":"128","Threads":"1","NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"320" \
-                , "MinimumThinkingTime":"0"})
-            #engine.debug_print = True
+            engine.set_engine_options({
+                "Hash": "128",
+                "Threads": "1",
+                "NetworkDelay": "0",
+                "NetworkDelay2": "0",
+                "MaxMovesToDraw": "320",
+                "MinimumThinkingTime": "0"
+            })
+            # engine.debug_print = True
             engine.connect("exe/YaneuraOu.exe")
 
         # 持ち時間設定。
@@ -197,7 +218,6 @@ class TestAyane(unittest.TestCase):
 
         server.terminate()
 
-
     # マルチあやねるサーバーを使った対局例    
     def test_ayane6(self):
         print("test_ayane6 : ")
@@ -208,11 +228,18 @@ class TestAyane(unittest.TestCase):
 
         # server.debug_print = True
         server.init_server(4)
-        options = {"Hash":"128","Threads":"1","NetworkDelay":"0","NetworkDelay2":"0","MaxMovesToDraw":"320" , "MinimumThinkingTime":"0"}
+        options = {
+            "Hash": "128",
+            "Threads": "1",
+            "NetworkDelay": "0",
+            "NetworkDelay2": "0",
+            "MaxMovesToDraw": "320",
+            "MinimumThinkingTime": "0"
+        }
 
         # 1P,2P側のエンジンそれぞれを設定して初期化する。
-        server.init_engine(0,"exe/YaneuraOu.exe", options)
-        server.init_engine(1,"exe/YaneuraOu.exe", options)
+        server.init_engine(0, "exe/YaneuraOu.exe", options)
+        server.init_engine(1, "exe/YaneuraOu.exe", options)
 
         # 持ち時間設定。
         # server.set_time_setting("byoyomi 100")                 # 1手0.1秒
@@ -226,13 +253,13 @@ class TestAyane(unittest.TestCase):
 
         # ゲーム数が増えていたら、途中結果を出力する。
         def output_info():
-            nonlocal last_total_games , server
+            nonlocal last_total_games, server
             if last_total_games != server.total_games:
                 last_total_games = server.total_games
                 print(server.game_info())
 
         # 10局やってみる。
-        while server.total_games < 10 :
+        while server.total_games < 10:
             output_info()
             time.sleep(1)
         output_info()
@@ -240,9 +267,10 @@ class TestAyane(unittest.TestCase):
         server.game_stop()
 
         # 対局棋譜の出力
-        # 例えば100局やるなら、"17 - 1 - 82(17.17% R-273.35[-348.9,-197.79]) winrate black , white = 48.48% , 51.52%"のように表示される。(はず)
+        # 例えば100局やるなら
+        # "17 - 1 - 82(17.17% R-273.35[-348.9,-197.79]) winrate black , white = 48.48% , 51.52%"のように表示される。(はず)
         for kifu in server.game_kifus:
-            print("game sfen = {0} , flip_turn = {1} , game_result = {2}".format(kifu.sfen , kifu.flip_turn , str(kifu.game_result)))
+            print(f"game sfen = {kifu.sfen} , flip_turn = {kifu.flip_turn} , game_result = {str(kifu.game_result)}")
 
         server.terminate()
 
