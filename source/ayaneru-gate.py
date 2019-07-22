@@ -261,11 +261,9 @@ def AyaneruGate():
     # 取得できたエンジンの一覧を表示
     if False: # こんなん表示せんでええやろ。
         print("engines        :")
-        i = 0
-        for engine_info in engine_infos:
+        for i,engine_info in enumerate(engine_infos):
             print("== Engine {0} ==".format(i))
             engine_info.print()
-            i += 1
 
     # レーティングが変動するエンジンが少なくとも2つないと意味がない。
     non_fixed_rating_engines = 0

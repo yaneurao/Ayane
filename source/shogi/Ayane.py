@@ -323,10 +323,8 @@ class UsiThinkResult:
         if len(self.pvs) == 1:
             s += self.pvs[0].to_string()
         elif len(self.pvs) >= 2:
-            i = 1
-            for p in self.pvs:
-                s += "multipv {0} {1}\n".format(i, p.to_string())
-                i += 1
+            for i,p in enumerate(self.pvs):
+                s += "multipv {0} {1}\n".format(i+1, p.to_string())
 
         # bestmoveとponderを連結する。
         if self.bestmove is not None:
