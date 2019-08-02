@@ -330,7 +330,7 @@ class UsiThinkResult:
         if self.bestmove is not None:
             s += "bestmove " + self.bestmove
         if self.ponder is not None:
-            s += " ponder" + self.ponder
+            s += " ponder " + self.ponder
         return s
 
 
