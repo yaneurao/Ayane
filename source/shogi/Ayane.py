@@ -161,13 +161,15 @@ class UsiEvalSpecialValue(IntEnum):
     # 例えば、3手詰めならこの値より3少ない。
     ValueMate = 100000
 
-    # MaxPly(256)手で詰むときのスコア
-    ValueMateInMaxPly = ValueMate - 256
+    ValueMaxMatePly = 2000
+
+    # ValueMaxMatePly(2000)手で詰むときのスコア
+    ValueMateInMaxPly = ValueMate - ValueMaxMatePly
 
     # 詰まされるスコア
     ValueMated = -int(ValueMate)
 
-    # MaxPly(256)手で詰まされるときのスコア
+    # ValueMaxMatePly(2000)手で詰まされるときのスコア
     ValueMatedInMaxPly = -int(ValueMateInMaxPly)
 
     # Valueの取りうる最大値(最小値はこの符号を反転させた値)
@@ -801,8 +803,16 @@ class UsiEngine:
                 elif token == "score":
                     token = scanner.get_token()
                     if token == "mate":
+                        # https://github.com/yaneurao/Ayane/issues/6
+                        # 技巧の場合、
+                        # "info depth 1 nodes 0 time 0 score mate + string Nyugyoku"
+                        # のような文字列が来ることがあるらしい。
                         is_minus = scanner.peek_token()[0] == '-'
                         ply = int(scanner.get_integer())  # pylintが警告を出すのでintと明示しておく。
+                        # 解析失敗したときはNoneが返ってくるので、このとき手数は+2000/-2000という扱いにしておく。
+                        # これはUsiEvalSpecialValueでmate scoreとして判定されるギリギリのスコア。
+                        if ply is None:
+                            ply = UsiEvalSpecialValue.ValueMaxMatePly
                         if not is_minus:
                             pv.eval = UsiEvalValue.mate_in_ply(ply)
                         else:
