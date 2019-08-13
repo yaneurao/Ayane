@@ -1092,14 +1092,14 @@ class AyaneruServer:
             # 現在の手番を数値化したもの。1P側=0 , 2P側=1
             int_turn = self.player_number(self.side_to_move)
             self.__rest_time[int_turn] -= int(elapsed_time)
-            if self.__rest_time[int_turn] < -2000:  # -2秒より減っていたら。0.1秒対局とかもあるので1秒繰り上げで引いていくとおかしくなる。
+            if self.__rest_time[int_turn] + self.__time_setting[byoyomi_str] < -2000:  # 秒読み含めて-2秒より減っていたら。0.1秒対局とかもあるので1秒繰り上げで引いていくとおかしくなる。
                 self.game_result = GameResult.from_win_turn(self.side_to_move.flip())
                 self.__game_over()
                 # 本来、自己対局では時間切れになってはならない。(計測が不確かになる)
                 # 警告を表示しておく。
                 print("Error! : player timeup")
                 return
-            # 残り時間がわずかにマイナスになっていたら0に戻しておく。
+            # 残り時間がマイナスになっていたら0に戻しておく。
             if self.__rest_time[int_turn] < 0:
                 self.__rest_time[int_turn] = 0
 
