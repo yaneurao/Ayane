@@ -1,4 +1,18 @@
 
+■　2019/08/17
+
+- info score mate + 文字列 のparseに失敗するの修正。その2。
+    cf. https://github.com/yaneurao/Ayane/issues/7
+
+
+■　2019/08/13
+
+
+- info score mate + 文字列 のparseに失敗するの修正。
+    cf. https://github.com/yaneurao/Ayane/issues/6
+
+- 時間切れ判定で秒読みを考慮していなかった点を修正 #5
+
 
 ■　2019/07/05
 

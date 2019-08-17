@@ -816,7 +816,9 @@ class UsiEngine:
                         if not is_minus:
                             pv.eval = UsiEvalValue.mate_in_ply(ply)
                         else:
-                            pv.eval = UsiEvalValue.mated_in_ply(-ply)
+                            pv.eval = UsiEvalValue.mated_in_ply(-int(ply))
+                            # ２つ上のifでNoneならint型になるはずなのだが、pylint、ここでplyがNoneの可能性があると勘違いしていて
+                            # NoneTypeに単項マイナスをつけているという警告が出る。仕方ないのでint()と明示する。
                     elif token == "cp":
                         pv.eval = UsiEvalValue(scanner.get_integer())
 
