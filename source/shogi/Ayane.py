@@ -808,7 +808,7 @@ class UsiEngine:
                         # "info depth 1 nodes 0 time 0 score mate + string Nyugyoku"
                         # のような文字列が来ることがあるらしい。
                         is_minus = scanner.peek_token()[0] == '-'
-                        ply = int(scanner.get_integer())  # pylintが警告を出すのでintと明示しておく。
+                        ply = scanner.get_integer()
                         # 解析失敗したときはNoneが返ってくるので、このとき手数は+2000/-2000という扱いにしておく。
                         # これはUsiEvalSpecialValueでmate scoreとして判定されるギリギリのスコア。
                         if ply is None:
