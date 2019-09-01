@@ -154,8 +154,8 @@ def AyaneruColosseum():
     options2p = {"Hash": str(args.hash2), "Threads": str(args.thread2), "EvalDir": eval2}
 
     # 1P,2P側のエンジンそれぞれを設定して初期化する。
-    server.init_engine(0, engine1, {}.update(**options_common, **options1p))
-    server.init_engine(1, engine2, {}.update(**options_common, **options2p))
+    server.init_engine(0, engine1, {**options_common, **options1p})
+    server.init_engine(1, engine2, {**options_common, **options2p})
 
     # 持ち時間設定。
     server.set_time_setting(args.time)
