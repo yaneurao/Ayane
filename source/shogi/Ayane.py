@@ -4,11 +4,13 @@ import time
 import os
 import math
 import random
+import io
 from queue import Queue
 from enum import Enum
 from enum import IntEnum
 from datetime import datetime
-
+from typing import Optional, Union, cast
+from typing import List, Tuple, Dict
 
 # unit_test1.pyのほうのコードを見ると最低限の使い方は理解できるはずです。(それがサンプルを兼ねているので)
 
@@ -23,8 +25,10 @@ from datetime import datetime
 class Log:
     # log_folder   : ログを書き出すフォルダ
     # file_logging : ファイルに書き出すのか？
-    # also_print   : 標準出力に出力するのか？ 
-    def __init__(self, log_folder: str, file_logging: bool = True, also_print: bool = True):
+    # also_print   : 標準出力に出力するのか？
+    def __init__(
+        self, log_folder: str, file_logging: bool = True, also_print: bool = True
+    ):
 
         # --- public members ---
 
@@ -48,12 +52,12 @@ class Log:
         self.log_filename = ""
 
         # 書き出しているファイルのハンドル
-        self.log_file = None  # File
+        self.log_file: Optional[io.TextIOWrapper] = None
 
         # --- private members ---
 
         # print()のときのlock用
-        self.__lock_object = threading.Lock()
+        self.lock_object = threading.Lock()
 
     # ファイルのopen。
     # コンストラクタで呼び出されるため、普通は明示的に呼び出す必要はない。
@@ -66,12 +70,16 @@ class Log:
 
         # このクラスのインスタンスの識別用ID。
         # 念の為、lockしてから参照/インクリメントを行う。
-        with Log.__static_lock_object:
-            count = Log.__static_count
-            Log.__static_count += 1
+        # 何番目に生成されたUsiEngineから出力されたログであるかをカウントしておき
+        # ログ出力のときに識別子として書き出すためのもの。
+        with Log.static_lock_object:
+            count = Log.static_count
+            Log.static_count += 1
 
         # 同じタイミングで複数のinstanceからログ・ファイルが生成されることを考慮して、ファイル名の末尾にinstance idみたいなのを付与しておく。
-        filename = "log{0}_{1}.txt".format(datetime.now().strftime('%Y-%m-%d %H-%M-%S'), count)
+        filename = "log{0}_{1}.txt".format(
+            datetime.now().strftime("%Y-%m-%d %H-%M-%S"), count
+        )
         self.log_filename = os.path.join(self.log_folder, filename)
 
         self.log_file = open(self.log_filename, "w", encoding="utf_8_sig")
@@ -83,11 +91,19 @@ class Log:
             self.log_file = None
 
     # 1行書き出す
-    def print(self, message: str, output_datetime: bool = False, also_print: bool = None, file_logging: bool = None):
+    def print(
+        self,
+        message: str,
+        output_datetime: bool = False,
+        also_print: bool = None,
+        file_logging: bool = None,
+    ):
         if output_datetime:
-            message = "[{0}]:{1}".format(datetime.now().strftime('%Y/%m/%d %H:%M:%S'), message)
+            message = "[{0}]:{1}".format(
+                datetime.now().strftime("%Y/%m/%d %H:%M:%S"), message
+            )
 
-        with self.__lock_object:
+        with self.lock_object:
 
             # ファイルへの書き出し
             # 引数でfile_loggingが設定されていたらそれに従う。
@@ -97,8 +113,12 @@ class Log:
                 # ファイルをまだopenしていないならopenする
                 if self.log_file is None:
                     self.open()
-                self.log_file.write(message + "\n")
-                self.log_file.flush()
+
+                # Optionalに対するメソッド呼び出しは、MyPyの警告がでるので、
+                # castを行ってからメソッドを呼び出す。
+                log_file = cast(io.TextIOWrapper, self.log_file)
+                log_file.write(message + "\n")
+                log_file.flush()
 
             # 標準出力に書き出すかどうかは、
             # 引数でalso_printが設定されていたら、それに従う。
@@ -112,10 +132,10 @@ class Log:
     # --- private static members ---
 
     # 静的メンバ変数とする。UsiEngineのインスタンスの数を記録する
-    __static_count = 0
+    static_count = 0
 
     # ↑の変数を変更するときのlock object
-    __static_lock_object = threading.Lock()
+    static_lock_object = threading.Lock()
 
 
 # GlobalなLogが欲しいときは、以下のSingletonLog.get_log()を用いるとよい。
@@ -130,7 +150,7 @@ class SingletonLog:
 
     # --- private static members
 
-    __log = None
+    __log: Optional[Log] = None
     __static_lock_object = threading.Lock()
 
 
@@ -140,7 +160,7 @@ class Turn(IntEnum):
     WHITE = 1  # 後手
 
     # 反転させた手番を返す
-    def flip(self) -> int:  # Turn:
+    def flip(self) -> "Turn":
         return Turn(int(self) ^ 1)
 
 
@@ -183,11 +203,19 @@ class UsiEvalSpecialValue(IntEnum):
 class UsiEvalValue(int):
     # 詰みのスコアであるか
     def is_mate_score(self):
-        return UsiEvalSpecialValue.ValueMateInMaxPly <= self <= UsiEvalSpecialValue.ValueMate
+        return (
+            UsiEvalSpecialValue.ValueMateInMaxPly
+            <= self
+            <= UsiEvalSpecialValue.ValueMate
+        )
 
     # 詰まされるスコアであるか
     def is_mated_score(self):
-        return UsiEvalSpecialValue.ValueMated <= self <= UsiEvalSpecialValue.ValueMatedInMaxPly
+        return (
+            UsiEvalSpecialValue.ValueMated
+            <= self
+            <= UsiEvalSpecialValue.ValueMatedInMaxPly
+        )
 
     # 評価値を文字列化する。
     def to_string(self):
@@ -273,25 +301,25 @@ class UsiThinkPV:
 
     # 表示できる文字列化して返す。(主にデバッグ用)
     def to_string(self) -> str:
-        s = []
-        self.__append(s, "depth", self.depth)
-        self.__append(s, "seldepth", self.seldepth)
+        s: List[str] = []
+        self.append(s, "depth", self.depth)
+        self.append(s, "seldepth", self.seldepth)
         if self.eval is not None:
             s.append(self.eval.to_string())
         if self.bound is not None:
             s.append("bound")
             s.append(self.bound.to_string())
-        self.__append(s, "nodes", self.nodes)
-        self.__append(s, "time", self.time)
-        self.__append(s, "hashfull", self.hashfull)
-        self.__append(s, "nps", self.nps)
-        self.__append(s, "pv", self.pv)
+        self.append(s, "nodes", self.nodes)
+        self.append(s, "time", self.time)
+        self.append(s, "hashfull", self.hashfull)
+        self.append(s, "nps", self.nps)
+        self.append(s, "pv", self.pv)
 
-        return ' '.join(s)
+        return " ".join(s)
 
     # to_string()の下請け。str2がNoneではないとき、s[]に、str1とstr2をappendする。
-    @staticmethod
-    def __append(s: [], str1: str, str2: str):
+    @classmethod
+    def append(cls, s: List[str], str1: str, str2: str):
         if str2 is not None:
             s.append(str1)
             s.append(str2)
@@ -325,8 +353,8 @@ class UsiThinkResult:
         if len(self.pvs) == 1:
             s += self.pvs[0].to_string()
         elif len(self.pvs) >= 2:
-            for i,p in enumerate(self.pvs):
-                s += "multipv {0} {1}\n".format(i+1, p.to_string())
+            for i, p in enumerate(self.pvs):
+                s += "multipv {0} {1}\n".format(i + 1, p.to_string())
 
         # bestmoveとponderを連結する。
         if self.bestmove is not None:
@@ -340,31 +368,31 @@ class UsiThinkResult:
 class Scanner:
     # argsとしてstr[]を渡しておく。
     # args[index]のところからスキャンしていく。
-    def __init__(self, args: [], index: int = 0):
-        self.__args = args
-        self.__index = index
+    def __init__(self, args: List[str], index: int = 0):
+        self.args = args
+        self.index = index
 
     # 次のtokenを覗き見する。tokenがなければNoneが返る。
     # indexは進めない
     def peek_token(self):
         if self.is_eof():
             return None
-        return self.__args[self.__index]
+        return self.args[self.index]
 
     # 次のtokenを取得して文字列として返す。indexを1進める。
     def get_token(self):
         if self.is_eof():
             return None
-        token = self.__args[self.__index]
-        self.__index += 1
+        token = self.args[self.index]
+        self.index += 1
         return token
 
     # 次のtokenを取得して数値化して返す。indexを1進める。
     def get_integer(self):
         if self.is_eof():
             return None
-        token = self.__args[self.__index]
-        self.__index += 1
+        token = self.args[self.index]
+        self.index += 1
         try:
             return int(token)
         except:
@@ -372,18 +400,18 @@ class Scanner:
 
     # indexが配列の末尾まで行ってればtrueが返る。
     def is_eof(self) -> bool:
-        return len(self.__args) <= self.__index
+        return len(self.args) <= self.index
 
     # index以降の文字列を連結して返す。
     # indexは配列末尾を指すようになる。(is_eof()==Trueを返すようになる)
     def rest_string(self) -> str:
-        rest = ' '.join(self.__args[self.__index:])
-        self.__index = len(self.__args)
+        rest = " ".join(self.args[self.index :])
+        self.index = len(self.args)
         return rest
 
     # 元の配列をスペースで連結したものを返す。
     def get_original_text(self) -> str:
-        return ' '.join(self.__args)
+        return " ".join(self.args)
 
 
 # USIプロトコルを用いて思考エンジンとやりとりするためのwrapperクラス
@@ -410,59 +438,58 @@ class UsiEngine:
         self.engine_fullpath = None
 
         # エンジンとのやりとりの状態を表現する。(readonly)
-        # UsiEngineState型
-        self.engine_state = None
+        self.engine_state: Optional[UsiEngineState] = None
 
         # connect()のあと、エンジンが終了したときの状態
         # エラーがあったとき、ここにエラーメッセージ文字列が入る
         # エラーがなく終了したのであれば0が入る。(readonly)
-        self.exit_state = None
+        self.exit_state: Optional[Union[int, str]] = None
 
         # --- private members ---
 
         # エンジンのプロセスハンドル
-        self.__proc = None
+        self.proc: Optional[subprocess.Popen] = None
 
         # エンジンとやりとりするスレッド
-        self.__read_thread = None
-        self.__write_thread = None
+        self.read_thread: threading.Thread = None
+        self.write_thread: threading.Thread = None
 
-        # エンジンに設定するオプション項目。(dictで)
+        # エンジンに設定するオプション項目。
         # 例 : {"Hash":"128","Threads":"8"}
-        self.__options = None
+        self.options: Dict[str, str] = None
 
         # 最後にエンジン側から受信した1行
-        self.__last_received_line = None
+        self.last_received_line: Optional[str] = None
 
         # エンジンにコマンドを送信するためのqueue(送信スレッドとのやりとりに用いる)
-        self.__send_queue = Queue()
+        self.send_queue = Queue()
 
         # print()を呼び出すときのlock object
-        self.__lock_object = threading.Lock()
+        self.lock_object = threading.Lock()
 
         # engine_stateが変化したときのイベント用
-        self.__state_changed_cv = threading.Condition()
+        self.state_changed_cv = threading.Condition()
 
         # このクラスのインスタンスの識別用ID。
         # 念の為、lockしてから参照/インクリメントを行う。
-        with UsiEngine.__static_lock_object:
-            self.__instance_id = UsiEngine.__static_count
-            UsiEngine.__static_count += 1
+        with UsiEngine.static_lock_object:
+            self.instance_id = UsiEngine.static_count
+            UsiEngine.static_count += 1
 
     # --- private static members ---
 
     # 静的メンバ変数とする。UsiEngineのインスタンスの数を記録する
-    __static_count = 0
+    static_count = 0
 
     # ↑の変数を変更するときのlock object
-    __static_lock_object = threading.Lock()
+    static_lock_object = threading.Lock()
 
     # engineに渡すOptionを設定する。
     # 基本的にエンジンは"engine_options.txt"で設定するが、Threads、Hashなどあとから指定したいものもあるので
     # それらについては、connectの前にこのメソッドを呼び出して設定しておく。
     # 例) usi.set_engine_options({"Hash":"128","Threads":"8"})
-    def set_engine_options(self, options: dict):
-        self.__options = options
+    def set_engine_options(self, options: Dict[str, str]):
+        self.options = options
 
     # エンジンに接続する
     # enginePath : エンジンPathを指定する。
@@ -477,99 +504,104 @@ class UsiEngine:
         self.engine_path = engine_path
 
         # write workerに対するコマンドqueue
-        self.__send_queue = Queue()
+        self.send_queue = Queue()
 
         # 最後にエンジン側から受信した行
         self.last_received_line = None
 
         # 実行ファイルの存在するフォルダ
         self.engine_fullpath = os.path.join(os.getcwd(), self.engine_path)
-        self.__change_state(UsiEngineState.WaitConnecting)
+        self.change_state(UsiEngineState.WaitConnecting)
 
         # subprocess.Popen()では接続失敗を確認する手段がないくさいので、
         # 事前に実行ファイルが存在するかを調べる。
         if not os.path.exists(self.engine_fullpath):
-            self.__change_state(UsiEngineState.Disconnected)
+            self.change_state(UsiEngineState.Disconnected)
             self.exit_state = "Connection Error"
             raise FileNotFoundError(self.engine_fullpath + " not found.")
 
-        self.__proc = subprocess.Popen(
-            self.engine_fullpath, shell=True,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE,
-            encoding='utf-8', cwd=os.path.dirname(self.engine_fullpath))
+        self.proc = subprocess.Popen(
+            self.engine_fullpath,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE,
+            encoding="utf-8",
+            cwd=os.path.dirname(self.engine_fullpath),
+        )
 
         # self.send_command("usi")
         # "usi"コマンドを先行して送っておく。
         # →　オプション項目が知りたいわけでなければエンジンに対して"usi"、送る必要なかったりする。
         # また、オプション自体は、"engine_options.txt"で設定されるものとする。
 
-        self.__change_state(UsiEngineState.Connected)
+        self.change_state(UsiEngineState.Connected)
 
         # 読み書きスレッド
-        self.__read_thread = threading.Thread(target=self.__read_worker)
-        self.__read_thread.start()
-        self.__write_thread = threading.Thread(target=self.__write_worker)
-        self.__write_thread.start()
+        self.read_thread = threading.Thread(target=self.read_worker)
+        self.read_thread.start()
+        self.write_thread = threading.Thread(target=self.write_worker)
+        self.write_thread.start()
 
     # エンジンのconnect()が呼び出されたあとであるか
     def is_connected(self) -> bool:
-        return self.__proc is not None
+        return self.proc is not None
 
     # エンジン用のプロセスにコマンドを送信する(プロセスの標準入力にメッセージを送る)
     def send_command(self, message: str):
-        self.__send_queue.put(message)
+        self.send_queue.put(message)
 
     # エンジン用のプロセスを終了する
     def disconnect(self):
-        if self.__proc is not None:
+        if self.proc is not None:
             self.send_command("quit")
             # スレッドをkillするのはpythonでは難しい。
             # エンジンが行儀よく動作することを期待するしかない。
             # "quit"メッセージを送信して、エンジン側に終了してもらうしかない。
 
-        if self.__read_thread is not None:
-            self.__read_thread.join()
-            self.__read_thread = None
+        if self.read_thread is not None:
+            self.read_thread.join()
+            self.read_thread = None
 
-        if self.__write_thread is not None:
-            self.__write_thread.join()
-            self.__write_thread = None
+        if self.write_thread is not None:
+            self.write_thread.join()
+            self.write_thread = None
 
         # GCが呼び出されたときに回収されるはずだが、UnitTestでresource leakの警告が出るのが許せないので
         # この時点でclose()を呼び出しておく。
-        if self.__proc is not None:
-            self.__proc.stdin.close()
-            self.__proc.stdout.close()
-            self.__proc.stderr.close()
-            self.__proc.terminate()
+        if self.proc is not None:
+            self.proc.stdin.close()
+            self.proc.stdout.close()
+            self.proc.stderr.close()
+            self.proc.terminate()
 
-        self.__proc = None
-        self.__change_state(UsiEngineState.Disconnected)
+        self.proc = None
+        self.change_state(UsiEngineState.Disconnected)
 
     # 指定したUsiEngineStateになるのを待つ
     # disconnectedになってしまったら例外をraise
     def wait_for_state(self, state: UsiEngineState):
         while True:
-            with self.__state_changed_cv:
+            with self.state_changed_cv:
                 if self.engine_state == state:
                     return
                 if self.engine_state == UsiEngineState.Disconnected:
                     raise ValueError("engine_state == UsiEngineState.Disconnected.")
 
                 # Eventが変化するのを待機する。
-                self.__state_changed_cv.wait()
+                self.state_changed_cv.wait()
 
     # [SYNC] usi_position()で設定した局面に対する合法手の指し手の集合を得る。
     # USIプロトコルでの表記文字列で返ってくる。
     # すぐに返ってくるはずなのでブロッキングメソッド
     # "moves"は、やねうら王でしか使えないUSI拡張コマンド
     def get_moves(self) -> str:
-        return self.__send_command_and_getline("moves")
+        return self.send_command_and_getline("moves")
 
     # [SYNC] usi_position()で設定した局面に対する手番を得る。
     # "side"は、やねうら王でしか使えないUSI拡張コマンド
     def get_side_to_move(self) -> Turn:
-        line = self.__send_command_and_getline("side")
+        line = self.send_command_and_getline("side")
         return Turn.BLACK if line == "black" else Turn.WHITE
 
     # --- エンジンに対して送信するコマンド ---
@@ -611,50 +643,52 @@ class UsiEngine:
     # bestmoveが返ってくるのを待つ
     # self.think_result.bestmoveからbestmoveを取り出すことができる。
     def wait_bestmove(self):
-        with self.__state_changed_cv:
-            self.__state_changed_cv.wait_for(lambda: self.think_result.bestmove is not None)
+        with self.state_changed_cv:
+            self.state_changed_cv.wait_for(
+                lambda: self.think_result.bestmove is not None
+            )
 
     # --- エンジンに対するコマンド、ここまで ---
 
     # [SYNC] エンジンに対して1行送って、すぐに1行返ってくるので、それを待って、この関数の返し値として返す。
-    def __send_command_and_getline(self, command: str) -> str:
+    def send_command_and_getline(self, command: str) -> str:
         self.wait_for_state(UsiEngineState.WaitCommand)
-        self.__last_received_line = None
-        with self.__state_changed_cv:
+        self.last_received_line = None
+        with self.state_changed_cv:
             self.send_command(command)
 
             # エンジン側から一行受信するまでblockingして待機
-            self.__state_changed_cv.wait_for(lambda: self.__last_received_line is not None)
-            return self.__last_received_line
+            self.state_changed_cv.wait_for(lambda: self.last_received_line is not None)
+            return cast(str, self.last_received_line)
 
     # エンジンとのやりとりを行うスレッド(read方向)
-    def __read_worker(self):
+    def read_worker(self):
         while True:
-            line = self.__proc.stdout.readline()
+            line = self.proc.stdout.readline()
             # プロセスが終了した場合、line = Noneのままreadline()を抜ける。
             if line:
-                self.__dispatch_message(line.strip())
+                self.dispatch_message(line.strip())
 
             # プロセスが生きているかのチェック
-            retcode = self.__proc.poll()
+            retcode = self.proc.poll()
             if not line and retcode is not None:
                 self.exit_state = 0
                 # エラー以外の何らかの理由による終了
                 break
 
     # エンジンとやりとりを行うスレッド(write方向)
-    def __write_worker(self):
+    def write_worker(self):
 
-        if self.__options is not None:
-            for k, v in self.__options.items():
-                self.send_command("setoption name {0} value {1}".format(k, v))
+        if self.options is not None:
+            for k, v in self.options.items():
+                self.send_command(f"setoption name {k} value {v}")
 
         self.send_command("isready")  # 先行して"isready"を送信
-        self.__change_state(UsiEngineState.WaitReadyOk)
+        self.change_state(UsiEngineState.WaitReadyOk)
 
         try:
             while True:
-                message = self.__send_queue.get()
+                message = self.send_queue.get()
 
                 # 先頭の文字列で判別する。
                 messages = message.split()
@@ -669,68 +703,70 @@ class UsiEngine:
                         continue
                 elif token == "go":
                     self.wait_for_state(UsiEngineState.WaitCommand)
-                    self.__change_state(UsiEngineState.WaitBestmove)
+                    self.change_state(UsiEngineState.WaitBestmove)
                 # positionコマンドは、WaitCommand状態でないと送信できない。
                 elif token == "position":
                     self.wait_for_state(UsiEngineState.WaitCommand)
                 elif token == "moves" or token == "side":
                     self.wait_for_state(UsiEngineState.WaitCommand)
-                    self.__change_state(UsiEngineState.WaitOneLine)
+                    self.change_state(UsiEngineState.WaitOneLine)
                 elif token == "usinewgame" or token == "gameover":
                     self.wait_for_state(UsiEngineState.WaitCommand)
 
-                self.__proc.stdin.write(message + '\n')
-                self.__proc.stdin.flush()
+                self.proc.stdin.write(message + "\n")
+                self.proc.stdin.flush()
                 if self.debug_print:
-                    self.__print("[{0}:<] {1}".format(self.__instance_id, message))
+                    self.print("[{0}:<] {1}".format(self.instance_id, message))
 
                 if token == "quit":
-                    self.__change_state(UsiEngineState.Disconnected)
+                    self.change_state(UsiEngineState.Disconnected)
                     # 終了コマンドを送信したなら自発的にこのスレッドを終了させる。
                     break
 
-                retcode = self.__proc.poll()
+                retcode = self.proc.poll()
                 if retcode is not None:
                     break
 
         except:
-            self.exit_state = "{0} : Engine error write_worker failed , EngineFullPath = {1}" \
-                .format(self.__instance_id, self.engine_fullpath)
+            self.exit_state = f"{self.instance_id} : Engine error write_worker failed , EngineFullPath = {self.engine_fullpath}"
 
     # 排他制御をするprint(このクラスからの出力に関してのみ)
-    def __print(self, mes: str):
+    def print(self, mes: str):
 
-        with self.__lock_object:
+        with self.lock_object:
             print(mes)
             # SingletonLog.get_log().print(mes)
             # などとすればファイルに書き出せる。
 
     # self.engine_stateを変更する。
-    def __change_state(self, state: UsiEngineState):
+    def change_state(self, state: UsiEngineState):
         # 切断されたあとでは変更できない
         if self.engine_state == UsiEngineState.Disconnected:
             return
         # goコマンドを送ってWaitBestmoveに変更する場合、現在の状態がWaitCommandでなければならない。
         if state == UsiEngineState.WaitBestmove:
             if self.engine_state != UsiEngineState.WaitCommand:
-                raise ValueError("{0} : can't send go command when self.engine_state != UsiEngineState.WaitCommand" \
-                    .format(self.__instance_id))
+                raise ValueError(
+                    "{0} : can't send go command when self.engine_state != UsiEngineState.WaitCommand".format(
+                        self.instance_id
+                    )
+                )
 
-        with self.__state_changed_cv:
+        with self.state_changed_cv:
             self.engine_state = state
-            self.__state_changed_cv.notify_all()
+            self.state_changed_cv.notify_all()
 
     # エンジン側から送られてきたメッセージを解釈する。
-    def __dispatch_message(self, message: str):
+    def dispatch_message(self, message: str):
         # デバッグ用に受け取ったメッセージを出力するのか？
         if self.debug_print or (self.error_print and message.find("Error") > -1):
-            self.__print("[{0}:>] {1}".format(self.__instance_id, message))
+            self.print("[{0}:>] {1}".format(self.instance_id, message))
 
         # 最後に受信した文字列はここに積む約束になっている。
-        self.__last_received_line = message
+        self.last_received_line = message
 
         # 先頭の文字列で判別する。
-        index = message.find(' ')
+        index = message.find(" ")
         if index == -1:
             token = message
         else:
@@ -740,21 +776,21 @@ class UsiEngine:
 
         # 1行待ちであったなら、これでハンドルしたことにして返る。
         if self.engine_state == UsiEngineState.WaitOneLine:
-            self.__change_state(UsiEngineState.WaitCommand)
+            self.change_state(UsiEngineState.WaitCommand)
             return
         # "isready"に対する応答
         elif token == "readyok":
-            self.__change_state(UsiEngineState.WaitCommand)
+            self.change_state(UsiEngineState.WaitCommand)
         # "go"に対する応答
         elif token == "bestmove":
-            self.__handle_bestmove(message)
-            self.__change_state(UsiEngineState.WaitCommand)
+            self.handle_bestmove(message)
+            self.change_state(UsiEngineState.WaitCommand)
         # エンジンの読み筋に対する応答
         elif token == "info":
-            self.__handle_info(message)
+            self.handle_info(message)
 
     # エンジンから送られてきた"bestmove"を処理する。
-    def __handle_bestmove(self, message: str):
+    def handle_bestmove(self, message: str):
         messages = message.split()
         if len(messages) >= 4 and messages[2] == "ponder":
             self.think_result.ponder = messages[3]
@@ -766,7 +802,7 @@ class UsiEngine:
             self.think_result.bestmove = "none"
 
     # エンジンから送られてきた"info ..."を処理する。
-    def __handle_info(self, message: str):
+    def handle_info(self, message: str):
 
         # まだ"go"を発行していないのか？
         if self.think_result is None:
@@ -807,7 +843,7 @@ class UsiEngine:
                         # 技巧の場合、
                         # "info depth 1 nodes 0 time 0 score mate + string Nyugyoku"
                         # のような文字列が来ることがあるらしい。
-                        is_minus = scanner.peek_token()[0] == '-'
+                        is_minus = scanner.peek_token()[0] == "-"
                         ply = scanner.get_integer()
                         # 解析失敗したときはNoneが返ってくるので、このとき手数は+2000/-2000という扱いにしておく。
                         # これはUsiEvalSpecialValueでmate scoreとして判定されるギリギリのスコア。
@@ -837,8 +873,11 @@ class UsiEngine:
                 else:
                     raise ValueError("ParseError")
             except:
-                self.__print("{0} : ParseError : token = {1}  , line = {2}" \
-                    .format(self.__instance_id, token,  scanner.get_original_text()))
+                self.print(
+                    "{0} : ParseError : token = {1}  , line = {2}".format(
+                        self.instance_id, token, scanner.get_original_text()
+                    )
+                )
 
         if multipv >= 1:
             # 配列の要素数が足りないなら、追加しておく。
@@ -883,8 +922,9 @@ class GameResult(IntEnum):
     # flip_turn : AyaneruServer.flip_turnを渡す
     def is_player1_win(self, flip_turn: bool) -> bool:
         # ""== True"とかクソダサいけど、対称性があって綺麗なのでこう書いておく。
-        return (self == GameResult.BLACK_WIN and (not flip_turn)) \
-               or (self == GameResult.WHITE_WIN and flip_turn)
+        return (self == GameResult.BLACK_WIN and (not flip_turn)) or (
+            self == GameResult.WHITE_WIN and flip_turn
+        )
 
 
 # 1対1での対局を管理してくれる補助クラス
@@ -935,17 +975,17 @@ class AyaneruServer:
         # --- private memebers ---
 
         # 持ち時間残り [1P側 , 2P側] 単位はms。
-        self.__rest_time = [0, 0]
+        self.rest_time = [0, 0]
 
         # 対局の持ち時間設定
         # self.set_time_setting()で渡されたものをparseしたもの。
-        self.__time_setting = {}
+        self.time_setting = {}
 
         # 対局用スレッド
-        self.__game_thread = None
+        self.game_thread: threading.Thread = None
 
         # 対局用スレッドの強制停止フラグ
-        self.__stop_thread = False
+        self.stop_thread: threading.Thread = False
 
     # turn側のplayer番号を取得する。(flip_turnを考慮する。)
     # 返し値
@@ -967,9 +1007,9 @@ class AyaneruServer:
         return self.engines[self.player_number(turn)]
 
     # turn手番側の持ち時間の残り。
-    # self.__rest_timeはflip_turnの影響を受ける。
-    def rest_time(self, turn: Turn) -> int:
-        return self.__rest_time[self.player_number(turn)]
+    # self.rest_timeはflip_turnの影響を受ける。
+    def get_rest_time(self, turn: Turn) -> int:
+        return self.rest_time[self.player_number(turn)]
 
     # 持ち時間設定を行う
     # time = 先後の持ち時間[ms]
@@ -989,7 +1029,17 @@ class AyaneruServer:
     # 例 : "time1p 10000 time2p 10000 inc1p 5000 inc2p 1000" : 10秒 + 先手1手ごとに5秒、後手1手ごとに1秒加算
     def set_time_setting(self, setting: str):
         scanner = Scanner(setting.split())
-        tokens = ["time", "time1p", "time2p", "byoyomi", "byoyomi1p", "byoyomi2p", "inc", "inc1p", "inc2p"]
+        tokens = [
+            "time",
+            "time1p",
+            "time2p",
+            "byoyomi",
+            "byoyomi1p",
+            "byoyomi2p",
+            "inc",
+            "inc1p",
+            "inc2p",
+        ]
         time_setting = {}
 
         while not scanner.is_eof():
@@ -1013,7 +1063,7 @@ class AyaneruServer:
             if not token in time_setting:
                 time_setting[token] = 0
 
-        self.__time_setting = time_setting
+        self.time_setting = time_setting
 
     # ゲームを初期化して、対局を開始する。
     # エンジンはconnectされているものとする。
@@ -1040,7 +1090,7 @@ class AyaneruServer:
             # "moves"の文字列は上で追加しているので必ず存在すると仮定できる。
             index = min(sp.index("moves") + start_gameply - 1, len(sp) - 1)
             # sp[0]からsp[index]までの文字列を連結する。
-            sfen = ' '.join(sp[0:index + 1])
+            sfen = " ".join(sp[0 : index + 1])
 
         self.sfen = sfen
 
@@ -1059,14 +1109,17 @@ class AyaneruServer:
             engine.send_command("usinewgame")  # いまから対局はじまるよー
 
         # 開始時 持ち時間
-        self.__rest_time = [self.__time_setting["time1p"], self.__time_setting["time2p"]]
+        self.rest_time = [
+            self.time_setting["time1p"],
+            self.time_setting["time2p"],
+        ]
 
         # 対局用のスレッドを作成するのがお手軽か..
-        self.__game_thread = threading.Thread(target=self.__game_worker)
-        self.__game_thread.start()
+        self.game_thread = threading.Thread(target=self.game_worker)
+        self.game_thread.start()
 
     # 対局スレッド
-    def __game_worker(self):
+    def game_worker(self):
 
         while self.game_ply < self.moves_to_draw:
             # 手番側に属するエンジンを取得する
@@ -1077,19 +1130,22 @@ class AyaneruServer:
             # 現在の手番側["1p" or "2p]の時間設定
             byoyomi_str = "byoyomi" + self.player_str(self.side_to_move)
             inctime_str = "inc" + self.player_str(self.side_to_move)
-            inctime = self.__time_setting[inctime_str]
+            inctime = self.time_setting[inctime_str]
 
             # inctimeが指定されていないならbyoymiを付与
             if inctime == 0:
-                byoyomi_or_inctime_str = "byoyomi {0}".format(self.__time_setting[byoyomi_str])
+                byoyomi_or_inctime_str = "byoyomi {0}".format(
+                    self.time_setting[byoyomi_str]
+                )
             else:
-                byoyomi_or_inctime_str = "binc {0} winc {1}". \
-                    format(self.__time_setting["inc" + self.player_str(Turn.BLACK)],
-                           self.__time_setting["inc" + self.player_str(Turn.WHITE)])
+                byoyomi_or_inctime_str = "binc {0} winc {1}".format(
+                    self.time_setting["inc" + self.player_str(Turn.BLACK)],
+                    self.time_setting["inc" + self.player_str(Turn.WHITE)],
+                )
 
             start_time = time.time()
             engine.usi_go_and_wait_bestmove(
-                f"btime {self.rest_time(Turn.BLACK)} wtime {self.rest_time(Turn.WHITE)} {byoyomi_or_inctime_str}"
+                f"btime {self.get_rest_time(Turn.BLACK)} wtime {self.get_rest_time(Turn.WHITE)} {byoyomi_or_inctime_str}"
             )
             end_time = time.time()
 
@@ -1103,52 +1159,54 @@ class AyaneruServer:
 
             # 現在の手番を数値化したもの。1P側=0 , 2P側=1
             int_turn = self.player_number(self.side_to_move)
-            self.__rest_time[int_turn] -= int(elapsed_time)
-            if self.__rest_time[int_turn] + self.__time_setting[byoyomi_str] < -2000:  # 秒読み含めて-2秒より減っていたら。0.1秒対局とかもあるので1秒繰り上げで引いていくとおかしくなる。
+            self.rest_time[int_turn] -= int(elapsed_time)
+            if (
+                self.rest_time[int_turn] + self.time_setting[byoyomi_str] < -2000
+            ):  # 秒読み含めて-2秒より減っていたら。0.1秒対局とかもあるので1秒繰り上げで引いていくとおかしくなる。
                 self.game_result = GameResult.from_win_turn(self.side_to_move.flip())
-                self.__game_over()
+                self.game_over()
                 # 本来、自己対局では時間切れになってはならない。(計測が不確かになる)
                 # 警告を表示しておく。
                 print("Error! : player timeup")
                 return
             # 残り時間がマイナスになっていたら0に戻しておく。
-            if self.__rest_time[int_turn] < 0:
-                self.__rest_time[int_turn] = 0
+            if self.rest_time[int_turn] < 0:
+                self.rest_time[int_turn] = 0
 
             bestmove = engine.think_result.bestmove
             if bestmove == "resign":
                 # 相手番の勝利
                 self.game_result = GameResult.from_win_turn(self.side_to_move.flip())
-                self.__game_over()
+                self.game_over()
                 return
             if bestmove == "win":
                 # 宣言勝ち(手番側の勝ち)
                 # 局面はノーチェックだが、まあエンジン側がバグっていなければこれでいいだろう)
                 self.game_result = GameResult.from_win_turn(self.side_to_move)
-                self.__game_over()
+                self.game_over()
                 return
 
             self.sfen = self.sfen + " " + bestmove
             self.game_ply += 1
 
             # inctime分、時間を加算
-            self.__rest_time[int_turn] += inctime
+            self.rest_time[int_turn] += inctime
             self.side_to_move = self.side_to_move.flip()
             # 千日手引き分けを処理しないといけないが、ここで判定するのは難しいので
             # max_movesで抜けることを期待。
 
-            if self.__stop_thread:
+            if self.stop_thread:
                 # 強制停止なので試合内容は保証されない
                 self.game_result = GameResult.STOP_GAME
                 return
 
                 # 引き分けで終了
         self.game_result = GameResult.MAX_MOVES
-        self.__game_over()
+        self.game_over()
 
     # ゲームオーバーの処理
     # エンジンに対してゲームオーバーのメッセージを送信する。
-    def __game_over(self):
+    def game_over(self):
         result = self.game_result
         if result.is_draw():
             for engine in self.engines:
@@ -1163,8 +1221,8 @@ class AyaneruServer:
 
     # エンジンを終了させるなどの後処理を行う
     def terminate(self):
-        self.__stop_thread = True
-        self.__game_thread.join()
+        self.stop_thread = True
+        self.game_thread.join()
         for engine in self.engines:
             engine.disconnect()
 
@@ -1252,16 +1310,34 @@ class EloRating:
 
         # →　勝率0% or 100%でも計算はしたほうがいいな。
 
-        self.rating = round(self.__calc_rating(self.win_rate), 2)
-        rating_str = " R" + str(self.rating) + "[" \
-                     + str(round(EloRating.__rating_lowerbound(self.win_rate, total), 2)) + "," \
-                     + str(round(EloRating.__rating_upperbound(self.win_rate, total), 2)) + "]"
+        self.rating = round(self.calc_rating(self.win_rate), 2)
+        rating_str = (
+            " R"
+            + str(self.rating)
+            + "["
+            + str(round(EloRating.calc_rating_lowerbound(self.win_rate, total), 2))
+            + ","
+            + str(round(EloRating.calc_rating_upperbound(self.win_rate, total), 2))
+            + "]"
+        )
 
-        self.pretty_string = str(self.player1_win) + " - " + str(self.draw_games) + " - " + str(self.player2_win) \
-                             + "(" + str(round(self.win_rate * 100, 2)) + "%" + rating_str + ")" \
-                             + " winrate black , white = " \
-                             + str(round(self.win_rate_black * 100, 2)) + "% , " \
-                             + str(round(self.win_rate_white * 100, 2)) + "%"
+        self.pretty_string = (
+            str(self.player1_win)
+            + " - "
+            + str(self.draw_games)
+            + " - "
+            + str(self.player2_win)
+            + "("
+            + str(round(self.win_rate * 100, 2))
+            + "%"
+            + rating_str
+            + ")"
+            + " winrate black , white = "
+            + str(round(self.win_rate_black * 100, 2))
+            + "% , "
+            + str(round(self.win_rate_white * 100, 2))
+            + "%"
+        )
 
     # cf. http://tadaoyamaoka.hatenablog.com/entry/2017/06/14/203529
     # ここで、rは勝率、nは対局数で、棄却域Rは、有意水準α=0.05とするとR>1.644854となる。
@@ -1273,16 +1349,19 @@ class EloRating:
     # r : 実際の対局の勝率 , n : 対局数 が 有意水準 0.05で有意なp0を返す
     # 上の数式をp0に関して解析的に解く
     @staticmethod
-    def __solve_hypothesis_testing(r, n):
+    def solve_hypothesis_testing(r, n):
         a = 1.644854
-        return (a ** 2 - math.sqrt(a ** 4 - 4 * (a ** 2) * n * (r ** 2) + 4 * (a ** 2) * n * r) + 2 * n * r) / (
-        2 * (a ** 2 + n))
+        return (
+            a ** 2
+            - math.sqrt(a ** 4 - 4 * (a ** 2) * n * (r ** 2) + 4 * (a ** 2) * n * r)
+            + 2 * n * r
+        ) / (2 * (a ** 2 + n))
         # cf.
         # https://www.wolframalpha.com/input/?i=(r+-+x)%2Fsqrt(x+*+(1-x)%2Fn)+%3D+a
 
     # 勝率が与えられたときにレーティングを返す
     @staticmethod
-    def __calc_rating(r):
+    def calc_rating(r):
         if r == 0:
             return -9999
         if r == 1:
@@ -1292,16 +1371,16 @@ class EloRating:
 
     # 勝率r,対局数nが与えられたときにレーティングの下限値を返す(信頼下限)
     @staticmethod
-    def __rating_lowerbound(r, n):
-        p0 = EloRating.__solve_hypothesis_testing(r, n)
-        return EloRating.__calc_rating(p0)
+    def calc_rating_lowerbound(r, n):
+        p0 = EloRating.solve_hypothesis_testing(r, n)
+        return EloRating.calc_rating(p0)
 
     # 勝率r,対局数nが与えられたときにレーティングの上限値を返す(信頼上限)
     @staticmethod
-    def __rating_upperbound(r, n):
+    def calc_rating_upperbound(r, n):
         # 相手側から見た勝率と、相手側から見た信頼下限を出して、その符号を反転させれば良い
-        p0 = EloRating.__solve_hypothesis_testing(1 - r, n)
-        return - EloRating.__calc_rating(p0)
+        p0 = EloRating.solve_hypothesis_testing(1 - r, n)
+        return -EloRating.calc_rating(p0)
 
 
 # 並列自己対局のためのクラス
@@ -1353,10 +1432,10 @@ class MultiAyaneruServer:
         # --- private members ---
 
         # game_start()のあとこれをTrueにするとすべての対局が停止する。
-        self.__game_stop = False
+        self.game_stop_flag = False
 
         # 対局監視用のスレッド
-        self.__game_thread = None
+        self.game_thread: threading.Thread = None
 
     # 対局サーバーを初期化する
     # num = 用意する対局サーバーの数(この数だけ並列対局する)
@@ -1395,7 +1474,7 @@ class MultiAyaneruServer:
         self.white_win = 0
         self.draw_games = 0
 
-        self.__game_stop = False
+        self.game_stop_flag = False
 
         flip = False
         # それぞれの対局、1個ごとに先後逆でスタートしておく。
@@ -1404,19 +1483,19 @@ class MultiAyaneruServer:
             if self.flip_turn_every_game:
                 flip ^= True
             # 対局を開始する
-            self.__start_server(server)
+            self.start_server(server)
 
         # 対局用のスレッドを作成するのがお手軽か..
-        self.__game_thread = threading.Thread(target=self.__game_worker)
-        self.__game_thread.start()
+        self.game_thread = threading.Thread(target=self.game_worker)
+        self.game_thread.start()
 
     # game_start()で開始したすべての対局を停止させる。
     def game_stop(self):
-        if self.__game_thread is None:
+        if self.game_thread is None:
             raise ValueError("game thread is not running.")
-        self.__game_stop = True
-        self.__game_thread.join()
-        self.__game_thread = None
+        self.game_stop_flag = True
+        self.game_thread.join()
+        self.game_thread = None
 
     # 対局結果("70-3-50"みたいな1P勝利数 - 引き分け - 2P勝利数　と、その勝率から計算されるレーティング差を文字列化して返す)
     def game_info(self) -> str:
@@ -1435,13 +1514,13 @@ class MultiAyaneruServer:
         return elo
 
     # ゲーム対局用のスレッド
-    def __game_worker(self):
+    def game_worker(self):
 
-        while not self.__game_stop:
+        while not self.game_stop_flag:
             for server in self.servers:
                 # 対局が終了しているサーバーがあるなら次のゲームを開始する。
                 if server.game_result.is_gameover():
-                    self.__restart_server(server)
+                    self.restart_server(server)
             time.sleep(1)
 
         # serverの解体もしておく。
@@ -1450,7 +1529,7 @@ class MultiAyaneruServer:
         self.servers = []
 
     # 結果を集計、棋譜の保存
-    def __count_result(self, server: AyaneruServer):
+    def count_result(self, server: AyaneruServer):
         result = server.game_result
 
         # 終局内容に応じて戦績を加算
@@ -1475,26 +1554,26 @@ class MultiAyaneruServer:
         self.game_kifus.append(kifu)
 
     # 対局サーバーを開始する。
-    def __start_server(self, server: AyaneruServer):
+    def start_server(self, server: AyaneruServer):
         # sfenをstart_sfensのなかから一つランダムに取得
         sfen = self.start_sfens[random.randint(0, len(self.start_sfens) - 1)]
         server.game_start(sfen, self.start_gameply)
 
     # 対局結果を集計して、サーバーを再開(次の対局を開始)させる。
-    def __restart_server(self, server: AyaneruServer):
+    def restart_server(self, server: AyaneruServer):
         # 対局結果の集計
-        self.__count_result(server)
+        self.count_result(server)
 
         # flip_turnを反転させておく。(1局ごとに手番を入れ替え)
         if self.flip_turn_every_game:
             server.flip_turn ^= True
 
         # 終了していたので再開
-        self.__start_server(server)
+        self.start_server(server)
 
     # 内包しているすべてのあやねるサーバーを終了させる。
     def terminate(self):
-        if self.__game_thread is not None:
+        if self.game_thread is not None:
             self.game_stop()
 
     def __del__(self):

@@ -23,7 +23,7 @@
 # inc = 1手ごとの加算[ms]
 # inc1p = 1p側のinc[ms]
 # inc2p = 2p側のinc[ms]
-# 
+#
 # 例 : --time "byoyomi 100" : 1手0.1秒
 # 例 : --time "time 900000" : 15分
 # 例 : --time "time1p 900000 time2p 900000 byoyomi 5000" : 15分 + 秒読み5秒
@@ -63,14 +63,23 @@ def AyaneruColosseum():
     parser = argparse.ArgumentParser("ayaneru-colosseum.py")
 
     # 持ち時間設定。デフォルト1秒
-    parser.add_argument("--time", type=str, default="byoyomi 100", help="持ち時間設定 AyaneruServer.set_time_setting()の引数と同じ。")
+    parser.add_argument(
+        "--time",
+        type=str,
+        default="byoyomi 100",
+        help="持ち時間設定 AyaneruServer.set_time_setting()の引数と同じ。",
+    )
 
     # home folder
     parser.add_argument("--home", type=str, default="", help="hole folder")
 
     # engine path
-    parser.add_argument("--engine1", type=str, default="exe/YaneuraOu.exe", help="engine1 path")
-    parser.add_argument("--engine2", type=str, default="exe/YaneuraOu.exe", help="engine2 path")
+    parser.add_argument(
+        "--engine1", type=str, default="exe/YaneuraOu.exe", help="engine1 path"
+    )
+    parser.add_argument(
+        "--engine2", type=str, default="exe/YaneuraOu.exe", help="engine2 path"
+    )
 
     # Hashサイズ。デフォルト64MB
     parser.add_argument("--hash1", type=int, default=128, help="engine1 hashsize[MB]")
@@ -80,24 +89,34 @@ def AyaneruColosseum():
     parser.add_argument("--loop", type=int, default=100, help="number of games")
 
     # CPUコア数
-    parser.add_argument("--cores", type=int, default=8, help="cpu cores(number of logical thread)")
+    parser.add_argument(
+        "--cores", type=int, default=8, help="cpu cores(number of logical thread)"
+    )
 
     # エンジンに割り当てるスレッド数
-    parser.add_argument("--thread1", type=int, default=2, help="number of engine1 thread")
-    parser.add_argument("--thread2", type=int, default=2, help="number of engine2 thread")
+    parser.add_argument(
+        "--thread1", type=int, default=2, help="number of engine1 thread"
+    )
+    parser.add_argument(
+        "--thread2", type=int, default=2, help="number of engine2 thread"
+    )
 
     # engine folder
     parser.add_argument("--eval1", type=str, default="eval", help="engine1 eval")
     parser.add_argument("--eval2", type=str, default="eval", help="engine2 eval2")
 
     # flip_turn
-    parser.add_argument("--flip_turn", type=bool, default=True, help="flip turn every game")
+    parser.add_argument(
+        "--flip_turn", type=bool, default=True, help="flip turn every game"
+    )
 
     # book_file
     parser.add_argument("--book_file", type=str, default=None, help="book filepath")
 
     # start_gameply
-    parser.add_argument("--start_gameply", type=int, default=24, help="start game ply in the book")
+    parser.add_argument(
+        "--start_gameply", type=int, default=24, help="start game ply in the book"
+    )
 
     args = parser.parse_args()
 
@@ -130,10 +149,10 @@ def AyaneruColosseum():
 
     # 1対局に要するスレッド数
     # (先後、同時に思考しないので大きいほう)
-    thread_total = max(args.thread1 , args.thread2)
+    thread_total = max(args.thread1, args.thread2)
     # 何並列で対局するのか？ 2スレほど余らせておかないとtimeupになるかもしれん。
     # メモリが足りるかは知らん。メモリ足りないとこれまたメモリスワップでtimeupになる。
-    cores = max(args.cores - 2 , 1)
+    cores = max(args.cores - 2, 1)
     game_server_num = int(cores / thread_total)
 
     # エンジンとのやりとりを標準出力に出力する
@@ -148,10 +167,18 @@ def AyaneruColosseum():
         "NetworkDelay2": "0",
         "MaxMovesToDraw": "320",
         "MinimumThinkingTime": "0",
-        "BookFile": "no_book"
+        "BookFile": "no_book",
     }
-    options1p = {"Hash": str(args.hash1), "Threads": str(args.thread1), "EvalDir": eval1}
-    options2p = {"Hash": str(args.hash2), "Threads": str(args.thread2), "EvalDir": eval2}
+    options1p = {
+        "Hash": str(args.hash1),
+        "Threads": str(args.thread1),
+        "EvalDir": eval1,
+    }
+    options2p = {
+        "Hash": str(args.hash2),
+        "Threads": str(args.thread2),
+        "EvalDir": eval2,
+    }
 
     # 1P,2P側のエンジンそれぞれを設定して初期化する。
     server.init_engine(0, engine1, {**options_common, **options1p})
@@ -181,7 +208,12 @@ def AyaneruColosseum():
         game_setting_str = "t{0}".format(args.thread1)
     else:
         game_setting_str = "t{0},{1}".format(args.thread1, args.thread2)
-    game_setting_str += args.time.replace("byoyomi", "b").replace("time", "t").replace("inc", "i").replace(" ", "")
+    game_setting_str += (
+        args.time.replace("byoyomi", "b")
+        .replace("time", "t")
+        .replace("inc", "i")
+        .replace(" ", "")
+    )
 
     # これで対局が開始する
     server.game_start()
