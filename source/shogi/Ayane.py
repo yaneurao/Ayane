@@ -346,6 +346,9 @@ class UsiThinkResult:
         # 最後に送られてきた読み筋がここに格納される。
         self.pvs = []  # List[UsiThinkPV]
 
+        # 詰め将棋エンジンの応答
+        self.checkmate = None # str
+
     # このインスタンスの内容を文字列化する。(主にデバッグ用)
     def to_string(self) -> str:
         s = ""
@@ -632,6 +635,13 @@ class UsiEngine:
         self.usi_go(options)
         self.wait_bestmove()
 
+    # [SYNC]
+    # go_command()を呼び出して、そのあとcheckmateが返ってくるまで待つ。
+    # 思考結果はself.think_resultから取り出せる。
+    def usi_go_and_wait_checkmate(self, options: str):
+        self.usi_go(options)
+        self.wait_checkmate()
+
     # [ASYNC]
     # エンジンに対してstopを送信する。
     # "go infinite"で思考させたときに停止させるのに用いる。
@@ -646,6 +656,15 @@ class UsiEngine:
         with self.state_changed_cv:
             self.state_changed_cv.wait_for(
                 lambda: self.think_result.bestmove is not None
+            )
+
+    # [SYNC]
+    # checkmateが返ってくるのを待つ
+    # self.think_result.checkmateから詰み筋を取り出すことができる。
+    def wait_checkmate(self):
+        with self.state_changed_cv:
+            self.state_changed_cv.wait_for(
+                lambda: self.think_result.checkmate is not None
             )
 
     # --- エンジンに対するコマンド、ここまで ---
@@ -788,6 +807,10 @@ class UsiEngine:
         # エンジンの読み筋に対する応答
         elif token == "info":
             self.handle_info(message)
+        # 詰め将棋エンジンに対する応答
+        elif token=="checkmate":
+            self.handle_checkmate(message)
+            self.change_state(UsiEngineState.WaitCommand)
 
     # エンジンから送られてきた"bestmove"を処理する。
     def handle_bestmove(self, message: str):
@@ -884,6 +907,9 @@ class UsiEngine:
             while len(self.think_result.pvs) < multipv:
                 self.think_result.pvs.append(None)
             self.think_result.pvs[multipv - 1] = pv
+
+    def handle_checkmate(self, message: str):
+        self.think_result.checkmate = message.replace("checkmate ", "")
 
     # デストラクタで通信の切断を行う。
     def __del__(self):
