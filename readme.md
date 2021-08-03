@@ -12,7 +12,7 @@ USIプロトコルのエンジンであれば他のエンジンでもpythonか�
 # 使い方
 
 ```python
-import shogi.Ayane
+import shogi.Ayane as ayane
 
 # 通常探索用の思考エンジンの接続テスト
 # 同期的に思考させる。
